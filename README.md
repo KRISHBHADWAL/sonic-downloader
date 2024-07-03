@@ -1,70 +1,87 @@
-# Getting Started with Create React App
+Here's the revised `README.md` without the extra line:
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+```markdown
+# SONIC⚡Downloader
 
-## Available Scripts
+SONIC⚡Downloader is a web application for downloading videos from various platforms using React for the frontend and Express.js with `yt-dlp` for backend operations. This application dynamically fetches video resolutions and FPS options based on the video URL provided.
 
-In the project directory, you can run:
+## Features
+- Fetch video resolutions and FPS options dynamically.
+- Supports multiple platforms (YouTube, Instagram, Snapchat).
+- Displays download progress.
 
-### `npm start`
+## Prerequisites
+- Node.js and npm
+- `yt-dlp` installed (Install via `pip`):
+  ```bash
+  pip install yt-dlp
+  ```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Installation
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/KRISHBHADWAL/sonic-downloader.git
+   cd sonic-downloader
+   ```
 
-### `npm test`
+2. Install the required dependencies:
+   ```bash
+   npm install
+   ```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+3. Start the server:
+   ```bash
+   node server.js
+   ```
 
-### `npm run build`
+4. Start the frontend:
+   ```bash
+   npm start
+   ```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Usage
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+1. Open the application in your browser at `http://localhost:3000`.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+2. Select the platform, enter the video URL, and wait for the video information to be fetched.
 
-### `npm run eject`
+3. Choose the desired resolution and FPS, then click "Download" to start the download process.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Project Structure
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+- `server.js`: The Express.js server that handles video information fetching and downloading using `yt-dlp`.
+- `Downloader.js`: The React component that forms the frontend interface, allowing users to input video URLs, select resolutions and FPS options, and initiate downloads.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## API Endpoints
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### POST /download
+- Request Body:
+  ```json
+  {
+    "url": "<video_url>",
+    "platform": "<platform>",
+    "resolution": "<resolution>",
+    "fps": "<fps>"
+  }
+  ```
+- Response:
+  - `200 OK` on success.
+  - `500 Internal Server Error` on failure.
 
-## Learn More
+### POST /video-info
+- Request Body:
+  ```json
+  {
+    "url": "<video_url>"
+  }
+  ```
+- Response:
+  - `200 OK` with video resolutions and FPS options.
+  - `500 Internal Server Error` on failure.
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## License
+This project is licensed under the MIT License.
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+This version contains all the necessary information for your project.
