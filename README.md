@@ -83,5 +83,3 @@ SONIC⚡Downloader is a web application for downloading videos from various plat
 ## License
 This project is licensed under the MIT License.
 ```
-
-This version contains all the necessary information for your project.
