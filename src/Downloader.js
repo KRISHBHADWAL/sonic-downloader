@@ -1,107 +1,133 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
-import { Container, Form, Button, ProgressBar, Alert } from 'react-bootstrap';
+import { Container, Form, Button, Alert, Spinner } from 'react-bootstrap';
+
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:4000';
 
 const Downloader = () => {
   const [url, setUrl] = useState('');
-  const [platform, setPlatform] = useState('YouTube');
   const [resolution, setResolution] = useState('');
   const [fps, setFps] = useState('Any');
-  const [resolutions, setResolutions] = useState([]);
-  const [fpsOptions, setFpsOptions] = useState([]);
-  const [progress, setProgress] = useState(0);
+  const [formats, setFormats] = useState([]);
+  const [videoTitle, setVideoTitle] = useState('');
   const [message, setMessage] = useState('');
+  const [variant, setVariant] = useState('info');
   const [loadingInfo, setLoadingInfo] = useState(false);
+  const [loadingDownload, setLoadingDownload] = useState(false);
 
-  const fetchVideoInfo = async (url) => {
+  const fetchVideoInfo = async event => {
+    event.preventDefault();
+    if (!url.trim()) {
+      setVariant('warning');
+      setMessage('Enter a video URL first.');
+      return;
+    }
     setLoadingInfo(true);
+    setFormats([]);
+    setResolution('');
+    setMessage('');
     try {
-      const response = await axios.post('http://localhost:4000/video-info', { url });
-      console.log(response.data); // Logging the response for debugging
-      setResolutions(response.data.resolutions);
-      setFpsOptions(response.data.fpsOptions);
-      setMessage('Video info fetched successfully.');
+      const response = await axios.post(API_BASE_URL + '/video-info', { url: url.trim() }, { timeout: 120000 });
+      const nextFormats = Array.isArray(response.data.formats) ? response.data.formats : [];
+      if (!nextFormats.length) {
+        setVariant('warning');
+        setMessage('No downloadable video formats were found for this URL.');
+        return;
+      }
+      setFormats(nextFormats);
+      setVideoTitle(response.data.title || 'Video ready');
+      const heights = [...new Set(nextFormats.map(item => String(item.height)))].sort((a, b) => Number(b) - Number(a));
+      setResolution(heights[0] || '');
+      setVariant('success');
+      setMessage('Video information loaded. Choose a quality and start the download.');
     } catch (error) {
-      setMessage(`Error fetching video info: ${error.message}`);
+      setVariant('danger');
+      setMessage((error.response && error.response.data && error.response.data.error) ||
+        'Could not fetch video information. Check the URL and backend service.');
     } finally {
       setLoadingInfo(false);
     }
   };
 
-  useEffect(() => {
-    if (url) {
-      fetchVideoInfo(url);
-    } else {
-      setResolutions([]);
-      setFpsOptions([]);
-    }
-  }, [url]);
+  const resolutions = [...new Set(formats.map(item => String(item.height)))].sort((a, b) => Number(b) - Number(a));
+  const fpsOptions = [...new Set(formats
+    .filter(item => String(item.height) === resolution && item.fps)
+    .map(item => Number(item.fps)).filter(Number.isFinite)
+  )].sort((a, b) => b - a);
 
-  const startDownload = async () => {
-    if (!url || !platform || !resolution) {
-      setMessage('Please fill in all required fields.');
+  const startDownload = async event => {
+    event.preventDefault();
+    if (!url.trim() || !resolution) {
+      setVariant('warning');
+      setMessage('Fetch video information and select a resolution first.');
       return;
     }
-    setMessage('Starting download...');
-    setProgress(0);
-
+    setLoadingDownload(true);
+    setMessage('');
     try {
-      const response = await axios.post('http://localhost:4000/download', {
-        url,
-        platform,
-        resolution,
-        fps: fps !== 'Any' ? fps : null,
-      }, {
-        onDownloadProgress: progressEvent => {
-          const total = progressEvent.total;
-          const current = progressEvent.loaded;
-          setProgress((current / total) * 100);
-        }
-      });
-
-      setMessage('Download and processing completed successfully!');
+      await axios.post(API_BASE_URL + '/download', {
+        url: url.trim(), resolution, fps: fps === 'Any' ? null : fps
+      }, { timeout: 10 * 60 * 1000 });
+      setVariant('success');
+      setMessage('Download completed on the backend server. The file is saved in its downloads folder.');
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
+      setVariant('danger');
+      setMessage((error.response && error.response.data && error.response.data.error) ||
+        'Download failed. Check the backend logs and try again.');
+    } finally {
+      setLoadingDownload(false);
     }
+  };
+
+  const updateUrl = value => {
+    setUrl(value);
+    setFormats([]);
+    setResolution('');
+    setVideoTitle('');
+    setMessage('');
   };
 
   return (
     <Container className="mt-5">
       <h1>SONIC⚡Downloader</h1>
-      {message && <Alert variant="info">{message}</Alert>}
-      <Form>
-        <Form.Group controlId="platform">
-          <Form.Label>Select Platform</Form.Label>
-          <Form.Control as="select" value={platform} onChange={e => setPlatform(e.target.value)}>
-            <option>YouTube</option>
-            <option>Instagram</option>
-            <option>Snapchat</option>
-          </Form.Control>
-        </Form.Group>
-        <Form.Group controlId="url">
+      <p className="text-muted">Fetch video formats and download media you are authorised to save.</p>
+      {message && <Alert variant={variant} role="status">{message}</Alert>}
+
+      <Form onSubmit={fetchVideoInfo}>
+        <Form.Group className="mb-3" controlId="url">
           <Form.Label>Video URL</Form.Label>
-          <Form.Control type="text" value={url} onChange={e => setUrl(e.target.value)} placeholder="Enter video URL" />
+          <Form.Control type="url" value={url} onChange={event => updateUrl(event.target.value)}
+            placeholder="https://..." maxLength={2048} required />
         </Form.Group>
-        {loadingInfo ? <p>Loading video info...</p> : (
-          <>
-            <Form.Group controlId="resolution">
-              <Form.Label>Select Resolution</Form.Label>
-              <Form.Control as="select" value={resolution} onChange={e => setResolution(e.target.value)}>
-                {resolutions.map(res => <option key={res} value={res}>{res}</option>)}
-              </Form.Control>
-            </Form.Group>
-            <Form.Group controlId="fps">
-              <Form.Label>Select FPS</Form.Label>
-              <Form.Control as="select" value={fps} onChange={e => setFps(e.target.value)}>
-                <option>Any</option>
-                {fpsOptions.map(fpsOption => <option key={fpsOption} value={fpsOption}>{fpsOption}</option>)}
-              </Form.Control>
-            </Form.Group>
-          </>
-        )}
-        <Button onClick={startDownload}>Download</Button>
+        <Button type="submit" disabled={loadingInfo || loadingDownload}>
+          {loadingInfo ? <><Spinner as="span" size="sm" animation="border" className="me-2" />Fetching formats...</> : 'Fetch video formats'}
+        </Button>
       </Form>
-      {progress > 0 && <ProgressBar now={progress} label={`${progress}%`} />}
+
+      {formats.length > 0 && (
+        <Form className="mt-4" onSubmit={startDownload}>
+          <h2 className="h5">{videoTitle}</h2>
+          <Form.Group className="mb-3" controlId="resolution">
+            <Form.Label>Video quality</Form.Label>
+            <Form.Select value={resolution} onChange={event => { setResolution(event.target.value); setFps('Any'); }}>
+              {resolutions.map(item => <option key={item} value={item}>{item}p</option>)}
+            </Form.Select>
+          </Form.Group>
+          <Form.Group className="mb-3" controlId="fps">
+            <Form.Label>Frame rate</Form.Label>
+            <Form.Select value={fps} onChange={event => setFps(event.target.value)}>
+              <option value="Any">Any available</option>
+              {fpsOptions.map(item => <option key={item} value={item + 'fps'}>{item} FPS or lower</option>)}
+            </Form.Select>
+          </Form.Group>
+          <Button type="submit" disabled={loadingDownload || loadingInfo || !resolution}>
+            {loadingDownload ? <><Spinner as="span" size="sm" animation="border" className="me-2" />Downloading...</> : 'Download'}
+          </Button>
+          <p className="small text-muted mt-2 mb-0">
+            The API reports completion but does not stream byte-level progress or send the file to this browser.
+          </p>
+        </Form>
+      )}
     </Container>
   );
 };
