@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node --env-file=.env server.js",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +14,8 @@
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=20.6.0"
   }
 }
