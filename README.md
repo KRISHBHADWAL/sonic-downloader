@@ -24,7 +24,7 @@ There is currently **no authentication or token flow**: no user accounts, OAuth,
 
 ## Requirements and setup
 
-- Node.js 18+
+- Node.js 20.6+
 - Python 3.9+
 - yt-dlp installed in the Python environment used by the backend
 
