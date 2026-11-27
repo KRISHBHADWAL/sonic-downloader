@@ -1,94 +1,140 @@
 const express = require('express');
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
-const PORT = 4000;
+const PORT = Number(process.env.PORT) || 4000;
+const HOST = process.env.HOST || '127.0.0.1';
+const PYTHON = process.env.PYTHON_COMMAND || (process.platform === 'win32' ? 'py' : 'python3');
+const DOWNLOAD_DIR = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirname, 'downloads'));
+const MAX_URL_LENGTH = 2048;
+const MAX_OUTPUT = 2 * 1024 * 1024;
+const TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS) || 600000;
+const ALLOWED_HOSTS = (process.env.ALLOWED_VIDEO_HOSTS ||
+  'youtube.com,www.youtube.com,youtu.be,m.youtube.com,music.youtube.com,instagram.com,www.instagram.com,m.instagram.com,snapchat.com,www.snapchat.com,story.snapchat.com')
+  .split(',').map(host => host.trim().toLowerCase()).filter(Boolean);
 
-const PYTHON_COMMAND = 'python'; // Adjust this based on your Python installation
-const YT_DLP_MODULE = '-m yt_dlp'; // Adjust this if yt_dlp is installed as a module
+app.disable('x-powered-by');
+app.use(express.json({ limit: '16kb' }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
 
-app.use(cors());
-app.use(express.json());
+function validateVideoUrl(value) {
+  if (typeof value !== 'string' || value.length > MAX_URL_LENGTH) return { error: 'Enter a valid video URL.' };
+  let parsed;
+  try { parsed = new URL(value); } catch { return { error: 'Enter a valid video URL.' }; }
+  if (!['http:', 'https:'].includes(parsed.protocol)) return { error: 'Only HTTP and HTTPS URLs are supported.' };
+  if (parsed.username || parsed.password || parsed.port) return { error: 'URL credentials and custom ports are not allowed.' };
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (!ALLOWED_HOSTS.some(host => hostname === host || hostname.endsWith('.' + host))) {
+    return { error: 'Unsupported platform URL. Use YouTube, Instagram, or Snapchat.' };
+  }
+  return { url: parsed.toString() };
+}
 
-// Endpoint to handle video download
-app.post('/download', (req, res) => {
-  const { url, platform, resolution, fps } = req.body;
+function buildFormat(resolution, fpsInput) {
+  const height = '[height<=' + resolution + ']';
+  const fps = fpsInput ? '[fps<=' + fpsInput.replace(/fps$/i, '') + ']' : '';
+  return 'bestvideo' + height + fps + '+bestaudio/best' + height + fps;
+}
 
-  let format = `bestvideo[height<=${resolution}]+bestaudio/best[height<=${resolution}]`;
-  if (fps && fps !== 'Any') format += `[fps<=${fps.replace('fps', '')}]`;
+function runYtDlp(args, res, onSuccess) {
+  fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+  const child = spawn(PYTHON, ['-m', 'yt_dlp', ...args], {
+    cwd: DOWNLOAD_DIR, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']
+  });
+  let stdout = '';
+  let stderr = '';
+  let settled = false;
+  const timeout = setTimeout(() => {
+    child.kill('SIGKILL');
+    finish(504, { error: 'The media operation timed out.' });
+  }, TIMEOUT_MS);
 
-  const command = `${PYTHON_COMMAND} ${YT_DLP_MODULE} -f "${format}" -o "%(title)s.%(ext)s" ${url}`;
+  function finish(status, body) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    if (!res.headersSent) res.status(status).json(body);
+  }
 
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error: ${error.message}`);
-      res.status(500).send(`Error: ${error.message}`);
-    } else if (stderr) {
-      console.error(`Stderr: ${stderr}`);
-      res.status(500).send(`Stderr: ${stderr}`);
-    } else {
-      console.log(`Stdout: ${stdout}`);
-      res.status(200).send('Download and processing completed successfully!');
+  child.stdout.on('data', chunk => {
+    stdout += chunk.toString();
+    if (stdout.length > MAX_OUTPUT) {
+      child.kill('SIGKILL');
+      finish(502, { error: 'The media tool returned too much output.' });
     }
   });
-});
+  child.stderr.on('data', chunk => {
+    stderr += chunk.toString();
+    if (stderr.length > MAX_OUTPUT) stderr = stderr.slice(-MAX_OUTPUT);
+  });
+  child.on('error', error => {
+    console.error('Could not start yt-dlp:', error.code || 'spawn error');
+    finish(500, { error: 'Unable to start yt-dlp. Check the Python and yt-dlp installation.' });
+  });
+  child.on('close', code => {
+    if (settled) return;
+    if (code !== 0) {
+      console.error('yt-dlp exited with code:', code);
+      finish(502, { error: 'The media service could not process this URL. Check that it is public and supported.' });
+      return;
+    }
+    try {
+      finish(200, onSuccess ? onSuccess(stdout, stderr) : { message: 'Download completed successfully.' });
+    } catch {
+      finish(502, { error: 'Could not parse media information returned by yt-dlp.' });
+    }
+  });
+}
 
 app.post('/video-info', (req, res) => {
-  const { url } = req.body;
-  const command = `${PYTHON_COMMAND} ${YT_DLP_MODULE} -F ${url}`;
-
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error: ${error.message}`);
-      res.status(500).send(`Error: ${error.message}`);
-      return;
-    }
-    if (stderr) {
-      console.error(`Stderr: ${stderr}`);
-      res.status(500).send(`Stderr: ${stderr}`);
-      return;
-    }
-
-    // Log the full output for debugging
-    console.log('yt-dlp Output:', stdout);
-
-    const formats = stdout.split('\n').filter(line => line.includes('video only') || line.match(/\d+p/));
-
-    // Log the filtered formats for debugging
-    console.log('Filtered Formats:', formats);
-
-    const resolutions = Array.from(new Set(
-      formats.map(format => {
-        const match = format.match(/\d+p/);
-        return match ? match[0] : null;
-      }).filter(Boolean)
-    ));
-
-    // Log the extracted resolutions for debugging
-    console.log('Extracted Resolutions:', resolutions);
-
-    const fpsOptions = Array.from(new Set(
-      formats.map(format => {
-        const match = format.match(/\b(\d{2})\b/); // Adjusted regex to match FPS
-        return match ? `${match[1]}fps` : null;
-      }).filter(Boolean)
-    ));
-
-    // Log the extracted FPS options for debugging
-    console.log('Extracted FPS Options:', fpsOptions);
-
-    if (resolutions.length === 0) {
-      res.status(500).send('No video resolutions found.');
-    } else {
-      res.status(200).json({ resolutions, fpsOptions });
-    }
+  const checked = validateVideoUrl(req.body && req.body.url);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+  runYtDlp(['--dump-single-json', '--skip-download', '--no-warnings', '--no-playlist', checked.url], res, stdout => {
+    const info = JSON.parse(stdout);
+    const formats = (info.formats || [])
+      .filter(f => f.height && f.vcodec && f.vcodec !== 'none')
+      .map(f => ({
+        format_id: f.format_id, ext: f.ext, height: f.height, fps: f.fps || null,
+        filesize: f.filesize || f.filesize_approx || null, format_note: f.format_note || null
+      }));
+    return { title: info.title || 'Untitled video', duration: info.duration || null, thumbnail: info.thumbnail || null, formats };
   });
 });
 
-
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+app.post('/download', (req, res) => {
+  const checked = validateVideoUrl(req.body && req.body.url);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+  const resolution = String((req.body && req.body.resolution) || '');
+  const fps = req.body && req.body.fps && req.body.fps !== 'Any' ? String(req.body.fps).replace(/fps$/i, '') : null;
+  const heightValue = Number(resolution);
+  const fpsValue = fps === null ? null : Number(fps);
+  if (!/^\\d+$/.test(resolution) || !Number.isFinite(heightValue) || heightValue < 1 || heightValue > 4320) {
+    return res.status(400).json({ error: 'Choose a valid resolution between 1p and 4320p.' });
+  }
+  if (fps !== null && (!Number.isFinite(fpsValue) || fpsValue < 1 || fpsValue > 240)) {
+    return res.status(400).json({ error: 'Choose a valid frame rate.' });
+  }
+  runYtDlp([
+    '--no-playlist', '--no-warnings', '--newline',
+    '--format', buildFormat(resolution, fps),
+    '--output', '%(title).150B [%(id)s].%(ext)s',
+    checked.url
+  ], res);
 });
+
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.use((err, _req, res, _next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Request body must be valid JSON.' });
+  }
+  console.error('Unhandled API error:', err.code || err.message);
+  return res.status(500).json({ error: 'An unexpected server error occurred.' });
+});
+
+if (require.main === module) {
+  app.listen(PORT, HOST, () => console.log('Sonic Downloader API listening on http://' + HOST + ':' + PORT));
+}
+module.exports = { app, validateVideoUrl, buildFormat };
