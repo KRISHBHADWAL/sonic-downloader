@@ -111,7 +111,7 @@ app.post('/download', (req, res) => {
   const fps = req.body && req.body.fps && req.body.fps !== 'Any' ? String(req.body.fps).replace(/fps$/i, '') : null;
   const heightValue = Number(resolution);
   const fpsValue = fps === null ? null : Number(fps);
-  if (!/^\\d+$/.test(resolution) || !Number.isFinite(heightValue) || heightValue < 1 || heightValue > 4320) {
+  if (!/^\d+$/.test(resolution) || !Number.isFinite(heightValue) || heightValue < 1 || heightValue > 4320) {
     return res.status(400).json({ error: 'Choose a valid resolution between 1p and 4320p.' });
   }
   if (fps !== null && (!Number.isFinite(fpsValue) || fpsValue < 1 || fpsValue > 240)) {
