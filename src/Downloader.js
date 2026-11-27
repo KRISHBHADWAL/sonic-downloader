@@ -28,7 +28,7 @@ const Downloader = () => {
     setMessage('');
     try {
       const response = await axios.post(API_BASE_URL + '/video-info', { url: url.trim() }, { timeout: 120000 });
-      const nextFormats = Array.isArray(response.data.formats) ? response.data.formats : [];
+      const nextFormats = Array.isArray(response.data.formats) ? response.data.formats.filter(item => Number(item.height) <= 4320) : [];
       if (!nextFormats.length) {
         setVariant('warning');
         setMessage('No downloadable video formats were found for this URL.');
