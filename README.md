@@ -1,6 +1,6 @@
 <!--
-  SONIC Downloader · project README
-  The animated, custom-lettered wordmark is stored locally in assets/.
+  SONIC Downloader · main project README
+  Animated wordmark maintained locally in assets/sonic-banner.gif.
 -->
 
 <p align="center">
@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <strong>A sleek, local-first media downloader with a neon edge.</strong>
+  <strong>One workspace for video downloads and SoundCloud music originals.</strong>
   <br />
-  Switch between video downloads and SoundCloud music originals, inspect available formats, and follow the download pipeline in real time.
+  Switch modes, inspect media, and follow the download pipeline in a neon-lit interface.
 </p>
 
 <p align="center">
@@ -26,37 +26,57 @@
 </p>
 
 <p align="center">
-  <a href="#-features">Features</a> ·
+  <a href="#-what-is-sonic">Overview</a> ·
+  <a href="#-modes--features">Modes & features</a> ·
   <a href="#-quick-start">Quick start</a> ·
-  <a href="#-how-it-works">How it works</a> ·
+  <a href="#-configuration">Configuration</a> ·
   <a href="#-api-reference">API</a> ·
-  <a href="#-security--limitations">Security</a>
+  <a href="#-security--permissions">Security</a>
 </p>
 
 ---
 
-## ⚡ Features
+## ⚡ What is SONIC?
 
-| | Capability | What it does |
-|:--:|---|---|
-| ◈ | **Format discovery** | Fetches video metadata and available download formats before you commit to a quality. |
-| ♫ | **SoundCloud music mode** | Finds individual tracks, shows artwork and metadata, and offers the original file only when SoundCloud exposes its download format. |
-| ⬡ | **Quality controls** | Choose a resolution and available frame rate from the formats returned by yt-dlp. |
-| ▰ | **Live progress** | Streams yt-dlp progress events to the neon progress bar using Server-Sent Events. |
-| ↓ | **Native downloads** | Delivers completed files through the browser's download manager instead of buffering the whole file in the UI. |
-| ⛨ | **Safer execution** | Uses shell-free process execution, a source-host allowlist, output-path checks, and short-lived single-use download tickets. |
-| ◉ | **Local-first setup** | Runs the React interface and Express API on your own machine, with optional local SoundCloud session cookies for signed-in downloads. |
+**SONIC Downloader** is a local-first media utility built around one compact interface and two modes:
 
-**Video sources:** YouTube, Instagram, and Snapchat. **Music source:** individual SoundCloud tracks. Platform availability and permissions apply.
+- **VIDEO** — inspect available formats, choose a resolution and frame rate, and download supported videos.
+- **MUSIC** — inspect individual SoundCloud tracks and download the original audio file only when SoundCloud makes that file available.
 
-## ✨ Interface
+Both modes share the same neon interface, live preparation progress, secure file-delivery flow, and local Express backend.
 
-The app uses a dark cyberpunk visual system with a switchable **VIDEO / MUSIC** control. Video mode keeps resolution and FPS controls; SoundCloud mode adds track artwork, artist/title metadata, permission status, and an original-file download action. Its progress bar reflects yt-dlp preparation while the browser manages the final transfer.
+## 🎛️ Modes & features
 
-SoundCloud mode accepts individual tracks only. It requests yt-dlp's exact `download` format and never falls back to HLS or streaming formats. A track without an original downloadable file is shown as stream-only and cannot be downloaded. SoundCloud requires listeners to be signed in and the uploader to enable downloads; playlists are not downloadable as a whole ([SoundCloud download guidance](https://help.soundcloud.com/hc/en-us/articles/115003448787-Downloading-tracks)).
+| Mode | Sources | What you can do |
+|:--|:--|:--|
+| **VIDEO** | YouTube, Instagram, Snapchat | Analyse a link, inspect available video formats, choose resolution and FPS, and download the result. |
+| **MUSIC** | Individual SoundCloud tracks | View artwork, title, artist and duration; check original-download availability; save the original file when enabled by the uploader. |
 
-> [!NOTE]
-> The progress bar tracks the backend media download. Once the file is ready, the browser takes over the final transfer and displays its own download progress.
+### Shared features
+
+| Feature | Details |
+|---|---|
+| **Two-mode switch** | Switch between VIDEO and MUSIC without leaving the page. Each mode presents the controls relevant to that media type. |
+| **Format discovery** | Retrieves media metadata before starting a download. |
+| **Live progress** | Streams yt-dlp preparation progress to the animated progress bar using Server-Sent Events. |
+| **Native file delivery** | Once the backend has prepared a file, the browser handles the final download. |
+| **Cyberpunk UI** | Dark interface, neon cyan and violet accents, pink SoundCloud mode, animated status details, and responsive layouts. |
+| **Local-first execution** | The React interface and Express API run on your machine. |
+
+### SoundCloud download rules
+
+SoundCloud music mode intentionally supports **original downloadable track files**, not stream capture.
+
+- Only individual track URLs are accepted; playlist and profile URLs are rejected.
+- The API checks for SoundCloud's original `download` format.
+- The download endpoint explicitly requests that format. It does not fall back to regular audio streams or HLS.
+- When no original download is available, the UI marks the track as stream-only and disables the download action.
+- SoundCloud's download flow requires a signed-in listener, and the uploader must have enabled downloads. SoundCloud does not provide whole-playlist downloads through this flow.
+
+See [SoundCloud's download guidance](https://help.soundcloud.com/hc/en-us/articles/115003448787-Downloading-tracks).
+
+> [!IMPORTANT]
+> Only download media you own or are authorised to save. The app does not unlock tracks whose creators have disabled downloads.
 
 ## 🧭 How it works
 
@@ -68,33 +88,37 @@ flowchart TD
     D --> E["Choose resolution and FPS"]
     E --> F["POST /download"]
     C -->|Music| G["POST /music-info"]
-    G --> H["Check original download permission"]
+    G --> H["Check original download availability"]
     H --> I["POST /music-download — exact download format"]
-    F --> J["Verify output file and issue one-use ticket"]
+    F --> J["Validate output file and create one-use ticket"]
     I --> J
     J --> K["Browser downloads the file"]
-    F -. "Live progress" .-> B
-    I -. "Live progress" .-> B
+    F -. "Live progress events" .-> B
+    I -. "Live progress events" .-> B
 ```
 
-### Request lifecycle
+### File delivery lifecycle
 
-**Video:** `POST /video-info` validates the source and returns formats. Choose a resolution/FPS, then `POST /download` streams progress events while yt-dlp prepares the file.
+1. The frontend sends a media URL to the matching information endpoint.
+2. The backend validates the URL and asks yt-dlp for metadata.
+3. Video mode presents available resolution/FPS choices. Music mode presents track details and original-download availability.
+4. The frontend starts the matching download endpoint and reads its Server-Sent Events.
+5. After yt-dlp finishes, the backend verifies that the output is a regular file inside the configured download directory.
+6. The backend creates a random, single-use download ticket that expires after 10 minutes.
+7. The browser opens the ticket URL and manages the final file transfer.
 
-**SoundCloud music:** `POST /music-info` resolves one track and checks whether SoundCloud exposes the original `download` format. `POST /music-download` requests only that exact format; if it is unavailable, the job fails instead of capturing a stream.
-
-Both paths use the same output-path verification, 10-minute single-use ticket, and native browser delivery pipeline.
+The progress bar reflects backend media preparation. Browser-native download progress takes over after the file is ready.
 
 ## 🧰 Tech stack
 
-| Layer | Technology | Role |
+| Layer | Technology | Purpose |
 |---|---|---|
-| Frontend | React 18 | Interactive downloader interface |
+| Frontend | React 18 | Interactive two-mode interface |
 | Build tooling | Vite | Development server and production bundling |
-| Frontend tests | Vitest + Testing Library | UI smoke tests |
-| Backend | Node.js + Express | Validation, process orchestration, and file delivery |
-| Media engine | yt-dlp | Metadata extraction and media downloads |
-| Backend tests | Node.js test runner | API helper and validation tests |
+| Frontend tests | Vitest + Testing Library | UI and mode-switch tests |
+| Backend | Node.js + Express | URL validation, media-process orchestration, and file delivery |
+| Media engine | yt-dlp | Metadata extraction and permitted media downloads |
+| Backend tests | Node.js test runner | URL validation, format checks, progress parsing, and file-delivery helpers |
 
 ## 🚀 Quick start
 
@@ -102,8 +126,8 @@ Both paths use the same output-path verification, 10-minute single-use ticket, a
 
 - **Node.js 22.12 or newer**
 - **Python 3.9 or newer**
-- **pip** and a working Python installation
-- Internet access for supported public media sources
+- **pip**
+- Internet access for supported media sources
 
 ### 1. Start the frontend
 
@@ -130,7 +154,7 @@ npm start
 
 The API starts at **http://127.0.0.1:4000**.
 
-Open the frontend, choose **VIDEO** or **MUSIC**, paste a supported URL, and follow the matching analysis and download controls.
+Open the frontend, choose **VIDEO** or **MUSIC**, paste a supported URL, and follow the on-screen controls.
 
 <details>
 <summary><strong>Windows PowerShell setup</strong></summary>
@@ -162,7 +186,7 @@ npm start
 
 ## ⚙️ Configuration
 
-The defaults are suitable for local development. Change them only when your environment requires it.
+The defaults are suitable for local development.
 
 ### Frontend — root `.env`
 
@@ -180,31 +204,41 @@ The defaults are suitable for local development. Change them only when your envi
 | `PYTHON_COMMAND` | `python3` (or `py` on Windows) | Python executable used to launch yt-dlp |
 | `DOWNLOAD_DIR` | `./downloads` | Backend download storage directory |
 | `YTDLP_TIMEOUT_MS` | `600000` | Maximum media operation duration |
-| `ALLOWED_VIDEO_HOSTS` | Hosts listed in `backend/.env.example` | Comma-separated video source-host allowlist |
-| `SOUNDCLOUD_COOKIES_FILE` | Unset | Optional path, relative to `backend/`, to your own signed-in SoundCloud cookies in Netscape format. Required only when SoundCloud's original-download endpoint needs your login. |
+| `ALLOWED_VIDEO_HOSTS` | See `backend/.env.example` | Comma-separated video source-host allowlist |
+| `SOUNDCLOUD_COOKIES_FILE` | Unset | Optional path to your own signed-in SoundCloud Netscape-format cookie file |
 
 Keep the frontend and backend origins aligned. For example, if the frontend is served from `http://localhost:5173`, set `CORS_ORIGIN=http://localhost:5173` in the backend environment.
 
+### Optional: signed-in SoundCloud session
+
+Some SoundCloud original-download requests may need your signed-in session. To configure your own local cookie file:
+
+1. Obtain a Netscape-format cookie file for your own SoundCloud account using a trusted local method.
+2. Place it in the backend folder, for example `backend/soundcloud-cookies.txt`.
+3. Add this line to `backend/.env`:
+
+   ```dotenv
+   SOUNDCLOUD_COOKIES_FILE=./soundcloud-cookies.txt
+   ```
+
+4. Restart the backend.
+
+The path is resolved relative to the `backend/` directory. This setting is optional and unset by default. Cookie files provide access to your account: treat them like passwords, keep them private, and never commit or share them. The suggested filename is excluded by `.gitignore`.
+
 ## 🔌 API reference
 
-| Method | Endpoint | Purpose |
-|:--:|---|---|
-| `GET` | `/health` | Returns API health status. |
-| `POST` | `/video-info` | Accepts a video URL and returns the title, duration, thumbnail, and curated formats. |
-| `POST` | `/download` | Accepts a video URL, resolution, and optional FPS; streams progress, completion, or failure events. |
-| `POST` | `/music-info` | Accepts one SoundCloud track URL and returns metadata plus original-download availability. |
-| `POST` | `/music-download` | Requests only SoundCloud's original `download` format and streams progress, completion, or failure events. |
-| `GET` | `/download/:ticket` | Streams the completed file as a browser attachment using a single-use ticket. |
+| Method | Endpoint | Mode | Purpose |
+|:--:|---|:--:|---|
+| `GET` | `/health` | Both | Returns API health status. |
+| `POST` | `/video-info` | Video | Returns title, duration, thumbnail, and available video formats. |
+| `POST` | `/download` | Video | Accepts a video URL, resolution, and optional FPS; streams progress and completion/failure events. |
+| `POST` | `/music-info` | Music | Returns SoundCloud track metadata and original-download availability. |
+| `POST` | `/music-download` | Music | Requests only SoundCloud's original `download` format; streams progress and completion/failure events. |
+| `GET` | `/download/:ticket` | Both | Delivers the completed file as a browser attachment using a single-use ticket. |
 
-### Download event stream
+### Video request example
 
-Both `POST /download` and `POST /music-download` return Server-Sent Events:
-
-- `progress` — contains the reported percentage and current stage.
-- `complete` — contains the temporary `downloadUrl`, filename, and expiry.
-- `failure` — contains a safe error message.
-
-Example request body:
+`POST /video-info` and `POST /download` accept the video URL. The download request also includes the selected resolution and optional frame rate:
 
 ```json
 {
@@ -214,52 +248,87 @@ Example request body:
 }
 ```
 
-The completion event returns a relative download URL. The frontend resolves it against the configured API origin and checks that it stays on that same origin before opening it.
+### SoundCloud request example
 
-## 🧪 Development
+`POST /music-info` and `POST /music-download` accept an individual track URL:
 
-Run the frontend checks from the repository root:
+```json
+{
+  "url": "https://soundcloud.com/artist/track"
+}
+```
+
+The music information response includes the track title, artist, duration, artwork URL, SoundCloud permalink, a `downloadAvailable` boolean, and original-file details when available.
+
+### Server-Sent Events
+
+Both download endpoints return an event stream:
+
+| Event | Payload |
+|---|---|
+| `progress` | Percentage reported by yt-dlp and the current preparation stage |
+| `complete` | Temporary `downloadUrl`, filename, and ticket expiry |
+| `failure` | Safe error message explaining why preparation failed |
+
+The frontend checks that the returned download URL resolves to the configured API origin before opening it.
+
+## 🧪 Development & tests
+
+Run frontend tests and the production build from the repository root:
 
 ```bash
 npm test
 npm run build
 ```
 
-Run backend tests from the `backend` directory:
+Run backend tests from the `backend/` directory:
 
 ```bash
 npm test
 ```
 
-Useful frontend commands:
+| Command | Location | Description |
+|---|---|---|
+| `npm start` | Root | Start the Vite development server |
+| `npm run dev` | Root | Alias for the Vite development server |
+| `npm test` | Root | Run frontend tests once |
+| `npm run build` | Root | Create the production build in `dist/` |
+| `npm run preview` | Root | Preview the production build locally |
+| `npm start` | `backend/` | Start the Express API |
+| `npm test` | `backend/` | Run backend tests |
 
-| Command | Description |
+GitHub Actions runs the frontend tests, production build, and backend test suite on pull requests and pushes to `master`.
+
+## 🛠️ Troubleshooting
+
+| Issue | What to check |
 |---|---|
-| `npm start` | Start the Vite development server |
-| `npm run dev` | Alias for the Vite development server |
-| `npm test` | Run the Vitest suite once |
-| `npm run build` | Create the production build in `dist/` |
-| `npm run preview` | Preview the production build locally |
+| Frontend cannot reach the API | Confirm the backend is running on port `4000` and that `VITE_API_BASE_URL` and `CORS_ORIGIN` match your local URLs. |
+| yt-dlp cannot start | Install yt-dlp in the Python environment selected by `PYTHON_COMMAND`; on Windows, use `PYTHON_COMMAND=py`. |
+| SoundCloud track is marked stream-only | The uploader may not have enabled downloads. Check whether SoundCloud itself offers a download action while signed in. |
+| SoundCloud original download still fails | Confirm your local `SOUNDCLOUD_COOKIES_FILE` points to a valid, current Netscape-format cookie file for your own signed-in account. |
+| Download ticket is invalid or expired | Start a new download. Tickets are single-use and expire after 10 minutes. |
 
-## 🛡️ Security & limitations
+## 🛡️ Security & permissions
 
 - yt-dlp is launched with `spawn(..., { shell: false })`; user-provided URLs are not interpolated into a shell command.
-- Source URLs are checked against an exact hostname allowlist.
+- Video and SoundCloud URLs use separate exact hostname validation. SoundCloud accepts individual track paths and rejects playlist/profile paths.
+- SoundCloud music mode selects only the original `download` format. It must not be changed to fall back to regular streaming or HLS formats.
 - Output paths are resolved and checked to ensure the delivered file is a regular file inside the configured download directory.
 - Download tickets are random, single-use, expire after **10 minutes**, and do not reveal filesystem paths.
-- SoundCloud authentication is optional and local-only: `SOUNDCLOUD_COOKIES_FILE` may point to a Netscape-format cookie file from your own signed-in account. Treat that file like a password, keep it outside version control, and never upload it to the app or share it. No OAuth flow is built into the UI.
-- Music mode only selects SoundCloud's original `download` format. Streaming/HLS formats are never accepted as a fallback, and playlist URLs are rejected.
-- SoundCloud track downloads require the uploader to have enabled downloads and a signed-in listener; a track may remain stream-only. Respect the creator's permissions and applicable terms.
+- The optional SoundCloud cookie file is a local secret. Keep it outside version control and do not expose the backend publicly while it is configured.
 - Tickets are held in memory and are intended for a single backend instance. Restarting the API invalidates outstanding tickets.
-- Downloaded files remain on the backend after delivery. Configure retention cleanup for long-running installations.
+- Downloaded files remain in the backend storage directory after delivery. Configure retention cleanup for long-running installations.
 
 > [!WARNING]
-> This project is intended for local use. A hostname allowlist alone is not a complete SSRF defence. Before exposing the API publicly, add authentication, rate limiting, per-user quotas, DNS/IP and redirect validation, network-level egress restrictions, persistent ticket handling, and download cleanup. Review platform terms and only save media you are authorised to download.
+> This project is intended for local use. A hostname allowlist alone is not a complete SSRF defence. Before exposing the API publicly, add authentication, rate limiting, per-user quotas, DNS/IP and redirect validation, network-level egress restrictions, persistent ticket handling, and download cleanup. Review the terms of each platform and only save media you are authorised to download.
 
-## 📁 Project layout
+## 📁 Project structure
 
 ```text
 sonic-downloader/
+├── assets/
+│   └── sonic-banner.gif
 ├── src/
 │   ├── App.jsx
 │   ├── App.test.jsx
@@ -286,7 +355,7 @@ sonic-downloader/
 <p align="center">
   <strong>SONIC ⚡ DOWNLOADER</strong>
   <br />
-  <sub>Built for speed. Designed for the dark.</sub>
+  <sub>One interface. Two modes. Built for the dark.</sub>
   <br /><br />
   <a href="https://github.com/KRISHBHADWAL/sonic-downloader">Repository</a> ·
   <a href="https://github.com/KRISHBHADWAL/sonic-downloader/issues">Report an issue</a>
