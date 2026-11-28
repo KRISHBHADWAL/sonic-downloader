@@ -5,7 +5,7 @@ A React frontend with an Express API that uses yt-dlp to inspect and download pu
 ## Components
 
 - **React UI — src/Downloader.js:** accepts a video URL, requests available formats when the user submits it, and sends the selected quality to the API.
-- **Express API — backend/server.js:** validates input, restricts source hosts, starts yt-dlp without a shell, and returns structured metadata or operation status.
+- **Express API — backend/server.js:** validates input, restricts source hosts, starts yt-dlp without a shell, and returns structured metadata or streams the completed file to the browser.
 - **yt-dlp:** resolves platform metadata and media formats and performs the server-side download.
 
 ## Request flow
@@ -16,7 +16,8 @@ A React frontend with an Express API that uses yt-dlp to inspect and download pu
 4. The backend invokes python -m yt_dlp --dump-single-json with spawn(..., { shell: false }).
 5. The API returns curated video format metadata; the UI builds resolution and FPS options from that list.
 6. The user selects quality and submits POST /download.
-7. The backend validates the options and invokes yt-dlp with an explicit format selector. Downloads are saved on the backend host.
+7. The backend validates the options and invokes yt-dlp with an explicit format selector.
+8. yt-dlp saves the completed file under backend/downloads. Express checks that the reported output file is inside that directory, then streams it to the browser as an attachment. The frontend saves the received file using its supplied filename.
 
 ## Credentials and tokens
 
@@ -43,7 +44,7 @@ The API binds to 127.0.0.1:4000 by default and allows the frontend origin http:/
 
 ## Known limitations and deployment notes
 
-- Files are stored on the backend server; they are not currently streamed or served to the browser.
-- The UI does not show true byte-level download progress.
+- Downloads are streamed to the requesting browser after yt-dlp completes; the server retains its copy in the downloads directory. Add a scheduled retention cleanup before long-running deployments.
+- The current UI indicates activity but does not report true byte-level download progress.
 - The backend is intended for local use. Before exposing it publicly, add authentication, rate limiting, per-user quotas, download cleanup, DNS/IP and redirect controls, and network-level outbound restrictions. An initial hostname allowlist alone does not fully eliminate SSRF risks in a media extractor.
 - Only download media you are authorised to save and comply with platform terms and applicable law.
