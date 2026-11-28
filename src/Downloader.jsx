@@ -2,7 +2,28 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Container, Form, Button, Alert, Spinner } from 'react-bootstrap';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:4000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:4000';
+
+async function errorMessage(error) {
+  const payload = error.response && error.response.data;
+  if (payload && typeof payload === 'object' && payload.error) return payload.error;
+  return 'The request failed. Check the URL and backend service.';
+}
+
+function openDownload(downloadUrl) {
+  const target = new URL(downloadUrl, API_BASE_URL);
+  if (target.origin !== new URL(API_BASE_URL).origin) {
+    throw new Error('The API returned an invalid download location.');
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = target.toString();
+  anchor.rel = 'noopener';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
 
 const Downloader = () => {
   const [url, setUrl] = useState('');
@@ -22,18 +43,22 @@ const Downloader = () => {
       setMessage('Enter a video URL first.');
       return;
     }
+
     setLoadingInfo(true);
     setFormats([]);
     setResolution('');
     setMessage('');
     try {
       const response = await axios.post(API_BASE_URL + '/video-info', { url: url.trim() }, { timeout: 120000 });
-      const nextFormats = Array.isArray(response.data.formats) ? response.data.formats.filter(item => Number(item.height) <= 4320) : [];
+      const nextFormats = Array.isArray(response.data.formats)
+        ? response.data.formats.filter(item => Number(item.height) <= 4320)
+        : [];
       if (!nextFormats.length) {
         setVariant('warning');
         setMessage('No downloadable video formats were found for this URL.');
         return;
       }
+
       setFormats(nextFormats);
       setVideoTitle(response.data.title || 'Video ready');
       const heights = [...new Set(nextFormats.map(item => String(item.height)))].sort((a, b) => Number(b) - Number(a));
@@ -42,8 +67,7 @@ const Downloader = () => {
       setMessage('Video information loaded. Choose a quality and start the download.');
     } catch (error) {
       setVariant('danger');
-      setMessage((error.response && error.response.data && error.response.data.error) ||
-        'Could not fetch video information. Check the URL and backend service.');
+      setMessage(await errorMessage(error));
     } finally {
       setLoadingInfo(false);
     }
@@ -52,7 +76,8 @@ const Downloader = () => {
   const resolutions = [...new Set(formats.map(item => String(item.height)))].sort((a, b) => Number(b) - Number(a));
   const fpsOptions = [...new Set(formats
     .filter(item => String(item.height) === resolution && item.fps)
-    .map(item => Number(item.fps)).filter(Number.isFinite)
+    .map(item => Number(item.fps))
+    .filter(Number.isFinite)
   )].sort((a, b) => b - a);
 
   const startDownload = async event => {
@@ -62,18 +87,25 @@ const Downloader = () => {
       setMessage('Fetch video information and select a resolution first.');
       return;
     }
+
     setLoadingDownload(true);
-    setMessage('');
+    setMessage('Preparing your download...');
     try {
-      await axios.post(API_BASE_URL + '/download', {
-        url: url.trim(), resolution, fps: fps === 'Any' ? null : fps
+      const response = await axios.post(API_BASE_URL + '/download', {
+        url: url.trim(),
+        resolution,
+        fps: fps === 'Any' ? null : fps
       }, { timeout: 10 * 60 * 1000 });
+
+      if (!response.data || typeof response.data.downloadUrl !== 'string') {
+        throw new Error('The backend did not return a download link.');
+      }
+      openDownload(response.data.downloadUrl);
       setVariant('success');
-      setMessage('Download completed on the backend server. The file is saved in its downloads folder.');
+      setMessage('Your file is ready. Your browser is downloading it now.');
     } catch (error) {
       setVariant('danger');
-      setMessage((error.response && error.response.data && error.response.data.error) ||
-        'Download failed. Check the backend logs and try again.');
+      setMessage(await errorMessage(error));
     } finally {
       setLoadingDownload(false);
     }
@@ -121,10 +153,10 @@ const Downloader = () => {
             </Form.Select>
           </Form.Group>
           <Button type="submit" disabled={loadingDownload || loadingInfo || !resolution}>
-            {loadingDownload ? <><Spinner as="span" size="sm" animation="border" className="me-2" />Downloading...</> : 'Download'}
+            {loadingDownload ? <><Spinner as="span" size="sm" animation="border" className="me-2" />Downloading and preparing file...</> : 'Download'}
           </Button>
           <p className="small text-muted mt-2 mb-0">
-            The API reports completion but does not stream byte-level progress or send the file to this browser.
+            Once ready, your browser receives the file directly using its native download handling.
           </p>
         </Form>
       )}
