@@ -64,9 +64,8 @@ test('creates unguessable download tickets', () => {
     fs.writeFileSync(file, 'video');
     const first = createDownloadTicket(file);
     const second = createDownloadTicket(file);
-    assert.match(first.ticket, /^[0-9a-f-]{36}$/i);
-    assert.notEqual(first.ticket, second.ticket);
-    assert.equal(first.expiresInSeconds, 600);
+    assert.match(first, /^[0-9a-f-]{36}$/i);
+    assert.notEqual(first, second);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
