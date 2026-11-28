@@ -65,15 +65,36 @@ const Downloader = () => {
     setLoadingDownload(true);
     setMessage('');
     try {
-      await axios.post(API_BASE_URL + '/download', {
+      const response = await axios.post(API_BASE_URL + '/download', {
         url: url.trim(), resolution, fps: fps === 'Any' ? null : fps
-      }, { timeout: 10 * 60 * 1000 });
+      }, { timeout: 10 * 60 * 1000, responseType: 'blob' });
+      const disposition = response.headers['content-disposition'] || '';
+      const filenameMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+      const filename = filenameMatch
+        ? decodeURIComponent(filenameMatch[1] || filenameMatch[2])
+        : 'sonic-download';
+      const blobUrl = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
       setVariant('success');
-      setMessage('Download completed on the backend server. The file is saved in its downloads folder.');
+      setMessage('Your download has been sent to the browser.');
     } catch (error) {
       setVariant('danger');
-      setMessage((error.response && error.response.data && error.response.data.error) ||
-        'Download failed. Check the backend logs and try again.');
+      let apiMessage = error.response && error.response.data && error.response.data.error;
+      if (error.response && error.response.data instanceof Blob) {
+        try {
+          const payload = JSON.parse(await error.response.data.text());
+          apiMessage = payload.error;
+        } catch {
+          apiMessage = null;
+        }
+      }
+      setMessage(apiMessage || 'Download failed. Check the backend logs and try again.');
     } finally {
       setLoadingDownload(false);
     }
@@ -124,7 +145,7 @@ const Downloader = () => {
             {loadingDownload ? <><Spinner as="span" size="sm" animation="border" className="me-2" />Downloading...</> : 'Download'}
           </Button>
           <p className="small text-muted mt-2 mb-0">
-            The API reports completion but does not stream byte-level progress or send the file to this browser.
+            The completed file is sent to your browser. Live byte-level progress is not yet available.
           </p>
         </Form>
       )}
