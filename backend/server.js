@@ -98,6 +98,11 @@ function runYtDlp(args, res, onSuccess) {
         settled = true;
         clearTimeout(timeout);
         res.download(filePath, path.basename(filePath), error => {
+          fs.unlink(filePath, cleanupError => {
+            if (cleanupError && cleanupError.code !== 'ENOENT') {
+              console.error('Could not remove temporary download:', cleanupError.code);
+            }
+          });
           if (error && !res.headersSent) res.status(500).json({ error: 'The generated file could not be sent to the browser.' });
         });
         return;
