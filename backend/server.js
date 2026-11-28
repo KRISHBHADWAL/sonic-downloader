@@ -18,7 +18,7 @@ const ALLOWED_HOSTS = (process.env.ALLOWED_VIDEO_HOSTS ||
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000', exposedHeaders: ['Content-Disposition'] }));
 
 function validateVideoUrl(value) {
   if (typeof value !== 'string' || value.length > MAX_URL_LENGTH) return { error: 'Enter a valid video URL.' };
@@ -82,7 +82,27 @@ function runYtDlp(args, res, onSuccess) {
       return;
     }
     try {
-      finish(200, onSuccess ? onSuccess(stdout, stderr) : { message: 'Download completed successfully.' });
+      const result = onSuccess ? onSuccess(stdout, stderr) : { message: 'Download completed successfully.' };
+      if (result && result.downloadPath) {
+        const filePath = path.resolve(result.downloadPath);
+        const relativePath = path.relative(DOWNLOAD_DIR, filePath);
+        if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+          finish(500, { error: 'The generated file path was outside the download directory.' });
+          return;
+        }
+        const fileStats = fs.statSync(filePath);
+        if (!fileStats.isFile()) {
+          finish(404, { error: 'The generated download file could not be found.' });
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        res.download(filePath, path.basename(filePath), error => {
+          if (error && !res.headersSent) res.status(500).json({ error: 'The generated file could not be sent to the browser.' });
+        });
+        return;
+      }
+      finish(200, result);
     } catch {
       finish(502, { error: 'Could not parse media information returned by yt-dlp.' });
     }
@@ -121,8 +141,13 @@ app.post('/download', (req, res) => {
     '--no-playlist', '--no-warnings', '--newline',
     '--format', buildFormat(resolution, fps),
     '--output', '%(title).150B [%(id)s].%(ext)s',
+    '--print', 'after_move:filepath',
     checked.url
-  ], res);
+  ], res, stdout => {
+    const reportedPath = stdout.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean).pop();
+    if (!reportedPath) throw new Error('yt-dlp did not report the output file path');
+    return { downloadPath: path.isAbsolute(reportedPath) ? reportedPath : path.resolve(DOWNLOAD_DIR, reportedPath) };
+  });
 });
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
