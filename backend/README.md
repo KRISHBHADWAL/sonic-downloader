@@ -14,7 +14,7 @@ Install the backend dependencies and yt-dlp:
     cp .env.example .env
     npm start
 
-On Windows, set PYTHON_COMMAND=py (or the full path to Python). The API binds to 127.0.0.1 by default; set HOST=0.0.0.0 only when deliberately exposing it on a trusted network. Set CORS_ORIGIN to the exact frontend origin (default: http://localhost:5173).
+On Windows, set PYTHON_COMMAND=py (or the full path to Python). The API binds to 127.0.0.1 by default; set HOST=0.0.0.0 only when deliberately exposing it on a trusted network. Set CORS_ORIGIN to the exact frontend origin (default: http://127.0.0.1:5173).
 
 ## Endpoints
 
