@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { validateVideoUrl, buildFormat, resolveDownloadFile, createDownloadTicket } = require('./server');
+const { validateVideoUrl, buildFormat, parseYtDlpProgress, resolveDownloadFile, createDownloadTicket } = require('./server');
 
 test('accepts supported HTTPS video URLs', () => {
   const result = validateVideoUrl('https://www.youtube.com/watch?v=abc123');
@@ -69,4 +69,15 @@ test('creates unguessable download tickets', () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+
+test('parses yt-dlp download progress lines', () => {
+  assert.equal(parseYtDlpProgress('[download]  43.2% of 10.0MiB at 2.0MiB/s'), 43.2);
+  assert.equal(parseYtDlpProgress('[download] 100% of 10.0MiB'), 100);
+});
+
+test('ignores non-progress output and malformed percentages', () => {
+  assert.equal(parseYtDlpProgress('Destination: clip.mp4'), null);
+  assert.equal(parseYtDlpProgress('[download] 140% complete'), null);
 });
