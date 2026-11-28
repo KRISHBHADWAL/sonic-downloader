@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateVideoUrl, buildFormat } = require('./server');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { validateVideoUrl, buildFormat, parseYtDlpProgress, resolveDownloadFile, createDownloadTicket } = require('./server');
 
 test('accepts supported HTTPS video URLs', () => {
   const result = validateVideoUrl('https://www.youtube.com/watch?v=abc123');
@@ -29,4 +32,52 @@ test('builds expected format selectors, including decimal FPS', () => {
     'bestvideo[height<=720][fps<=29.97]+bestaudio/best[height<=720][fps<=29.97]');
   assert.equal(buildFormat('1080', null),
     'bestvideo[height<=1080]+bestaudio/best[height<=1080]');
+});
+
+test('resolves a regular output file inside the download directory', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sonic-downloads-'));
+  try {
+    const file = path.join(root, 'clip.mp4');
+    fs.writeFileSync(file, 'video');
+    assert.equal(resolveDownloadFile(root, 'clip.mp4'), fs.realpathSync(file));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('rejects output files outside the download directory', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'sonic-download-test-'));
+  const root = path.join(parent, 'downloads');
+  fs.mkdirSync(root);
+  fs.writeFileSync(path.join(parent, 'private.txt'), 'private');
+  try {
+    assert.throws(() => resolveDownloadFile(root, '../private.txt'));
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test('creates unguessable download tickets', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sonic-ticket-'));
+  try {
+    const file = path.join(root, 'clip.mp4');
+    fs.writeFileSync(file, 'video');
+    const first = createDownloadTicket(file);
+    const second = createDownloadTicket(file);
+    assert.match(first, /^[0-9a-f-]{36}$/i);
+    assert.notEqual(first, second);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('parses yt-dlp download progress lines', () => {
+  assert.equal(parseYtDlpProgress('[download]  43.2% of 10.0MiB at 2.0MiB/s'), 43.2);
+  assert.equal(parseYtDlpProgress('[download] 100% of 10.0MiB'), 100);
+});
+
+test('ignores non-progress output and malformed percentages', () => {
+  assert.equal(parseYtDlpProgress('Destination: clip.mp4'), null);
+  assert.equal(parseYtDlpProgress('[download] 140% complete'), null);
 });
