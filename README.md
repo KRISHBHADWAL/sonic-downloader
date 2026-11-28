@@ -1,12 +1,11 @@
 <!--
   SONIC Downloader · project README
-  GitHub renders this file using its own Markdown typography.
-  The animated headline below uses JetBrains Mono via a hosted typing-SVG image.
+  The animated, custom-lettered wordmark is stored locally in assets/.
 -->
 
 <p align="center">
   <a href="https://github.com/KRISHBHADWAL/sonic-downloader">
-    <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=700&size=32&pause=1100&color=65F2FF&center=true&vCenter=true&width=900&height=88&duration=3600&lines=SONIC+%E2%9A%A1+DOWNLOADER;MOVE+AT+THE+SPEED+OF+SONIC;MEDIA+IN.+DOWNLOAD+OUT." alt="SONIC Downloader — Move at the speed of Sonic" />
+    <img src="./assets/sonic-banner.gif" alt="SONIC Downloader — animated neon wordmark" width="900" />
   </a>
 </p>
 
