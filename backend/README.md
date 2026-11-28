@@ -16,7 +16,7 @@ Install the backend dependencies and yt-dlp:
 
 On Windows, set PYTHON_COMMAND=py (or the full path to Python). The API binds to 127.0.0.1 by default; set HOST=0.0.0.0 only when deliberately exposing it on a trusted network. Set CORS_ORIGIN to the exact frontend origin.
 
-Downloads are written temporarily to backend/downloads/ and the completed file is sent to the browser as an attachment. Files are not automatically deleted yet; configure retention/cleanup before public deployment.
+Downloads are written temporarily to backend/downloads/, sent to the browser as an attachment, and removed after the response completes. A process crash or abrupt server shutdown can still leave temporary files, so add a scheduled retention cleanup before public deployment.
 
 ## Endpoints
 
