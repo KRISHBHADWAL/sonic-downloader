@@ -4,19 +4,20 @@ A React frontend with an Express API that uses yt-dlp to inspect and download pu
 
 ## Components
 
-- **React UI — src/Downloader.js:** accepts a video URL, requests available formats when the user submits it, and sends the selected quality to the API.
-- **Express API — backend/server.js:** validates input, restricts source hosts, starts yt-dlp without a shell, and returns structured metadata or operation status.
+- **React UI — src/Downloader.js:** accepts a video URL, requests available formats on submission, and sends the selected quality to the API. It receives the completed file as a browser download.
+- **Express API — backend/server.js:** validates input, restricts source hosts, starts yt-dlp without a shell, returns structured metadata, and streams the finished file to the requesting browser.
 - **yt-dlp:** resolves platform metadata and media formats and performs the server-side download.
 
 ## Request flow
 
 1. The user enters a URL and selects **Fetch video formats**.
 2. The browser sends POST /video-info with the URL.
-3. Express validates the URL protocol, host, length, credentials and port.
+3. Express validates the URL protocol, exact hostname, length, credentials and port.
 4. The backend invokes python -m yt_dlp --dump-single-json with spawn(..., { shell: false }).
 5. The API returns curated video format metadata; the UI builds resolution and FPS options from that list.
 6. The user selects quality and submits POST /download.
-7. The backend validates the options and invokes yt-dlp with an explicit format selector. Downloads are saved on the backend host.
+7. The backend validates the options, invokes yt-dlp with an explicit format selector, and captures the final output path.
+8. Express verifies that the output file is inside the configured download directory and sends it to the browser as an attachment.
 
 ## Credentials and tokens
 
@@ -43,7 +44,8 @@ The API binds to 127.0.0.1:4000 by default and allows the frontend origin http:/
 
 ## Known limitations and deployment notes
 
-- Files are stored on the backend server; they are not currently streamed or served to the browser.
-- The UI does not show true byte-level download progress.
+- Completed files are sent to the browser as downloads. Large files are buffered by the browser's Axios Blob response, so very large downloads may use substantial memory.
+- Live byte-level download progress is not yet available.
 - The backend is intended for local use. Before exposing it publicly, add authentication, rate limiting, per-user quotas, download cleanup, DNS/IP and redirect controls, and network-level outbound restrictions. An initial hostname allowlist alone does not fully eliminate SSRF risks in a media extractor.
+- The frontend still uses Create React App, which React has deprecated. A Vite migration is recommended as a separate change after the current baseline is stable.
 - Only download media you are authorised to save and comply with platform terms and applicable law.
