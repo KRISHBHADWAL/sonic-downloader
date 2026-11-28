@@ -19,7 +19,7 @@ On Windows, set PYTHON_COMMAND=py (or the full path to Python). The API binds to
 ## Endpoints
 
 - POST /video-info accepts a URL and returns the title, duration, thumbnail, and curated format metadata.
-- POST /download accepts a URL, resolution, and optional FPS. After the media download completes, it returns a short-lived, single-use download URL.
+- POST /download accepts a URL, resolution, and optional FPS, and streams `progress`, `complete`, or `failure` Server-Sent Events. Progress values come from yt-dlp output. The completion event includes a short-lived, single-use download URL.
 - GET /download/:ticket streams the ticket's file as an attachment. Tickets expire after 10 minutes and are removed when used.
 - GET /health returns status ok while the API is running.
 
@@ -27,7 +27,7 @@ On Windows, set PYTHON_COMMAND=py (or the full path to Python). The API binds to
 
 Files are written to DOWNLOAD_DIR (backend/downloads by default). The API only issues a ticket for an output file reported by yt-dlp after verifying the resolved file is inside that directory and is a regular file. The GET route verifies the path again before streaming.
 
-Tickets are random, single-use, in-memory capabilities with a 10-minute expiry. They are not user authentication and are not shared across multiple backend instances. Files remain on the server after being sent; configure retention cleanup for deployments with persistent storage.
+The frontend displays live yt-dlp media-preparation progress while this endpoint runs; after completion it opens the ticket URL as a native browser download. The browser manages the final file-transfer display. Tickets are random, single-use, in-memory capabilities with a 10-minute expiry. They are not user authentication and are not shared across multiple backend instances. Files remain on the server after being sent; configure retention cleanup for deployments with persistent storage.
 
 ## Security
 
