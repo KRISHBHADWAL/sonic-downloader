@@ -373,7 +373,7 @@ const Downloader = () => {
                 </div>
                 <div className={'track-permission' + (musicInfo.downloadAvailable ? ' track-permission--yes' : '')} aria-label={musicInfo.downloadAvailable ? 'Download permitted' : 'Download not available'}>
                   <span>{musicInfo.downloadAvailable ? '✓' : '×'}</span>
-                  <small>{musicInfo.downloadAvailable ? 'DOWNLOAD\\nAVAILABLE' : 'STREAM\\nONLY'}</small>
+                  <small>{musicInfo.downloadAvailable ? 'DOWNLOAD\nAVAILABLE' : 'STREAM\nONLY'}</small>
                 </div>
               </div>
               <div className="music-action-row">
