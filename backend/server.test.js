@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { validateVideoUrl, buildFormat, resolveDownloadFile } = require('./server');
+const { validateVideoUrl, buildFormat, resolveDownloadFile, createDownloadTicket } = require('./server');
 
 test('accepts supported HTTPS video URLs', () => {
   const result = validateVideoUrl('https://www.youtube.com/watch?v=abc123');
@@ -49,11 +49,25 @@ test('rejects output files outside the download directory', () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'sonic-download-test-'));
   const root = path.join(parent, 'downloads');
   fs.mkdirSync(root);
-  const outside = path.join(parent, 'private.txt');
-  fs.writeFileSync(outside, 'private');
+  fs.writeFileSync(path.join(parent, 'private.txt'), 'private');
   try {
     assert.throws(() => resolveDownloadFile(root, '../private.txt'));
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test('creates unguessable download tickets', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sonic-ticket-'));
+  try {
+    const file = path.join(root, 'clip.mp4');
+    fs.writeFileSync(file, 'video');
+    const first = createDownloadTicket(file);
+    const second = createDownloadTicket(file);
+    assert.match(first.ticket, /^[0-9a-f-]{36}$/i);
+    assert.notEqual(first.ticket, second.ticket);
+    assert.equal(first.expiresInSeconds, 600);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
