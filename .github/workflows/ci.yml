@@ -16,7 +16,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test -- --watchAll=false
+      - run: npm test
         env:
           CI: true
       - run: npm run build
