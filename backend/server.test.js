@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { validateVideoUrl, buildFormat, parseYtDlpProgress, resolveDownloadFile, createDownloadTicket } = require('./server');
+const { validateVideoUrl, validateSoundCloudUrl, isSoundCloudOriginalDownloadAvailable, buildFormat, parseYtDlpProgress, resolveDownloadFile, createDownloadTicket } = require('./server');
 
 test('accepts supported HTTPS video URLs', () => {
   const result = validateVideoUrl('https://www.youtube.com/watch?v=abc123');
@@ -80,4 +80,24 @@ test('parses yt-dlp download progress lines', () => {
 test('ignores non-progress output and malformed percentages', () => {
   assert.equal(parseYtDlpProgress('Destination: clip.mp4'), null);
   assert.equal(parseYtDlpProgress('[download] 140% complete'), null);
+});
+
+test('accepts individual SoundCloud track URLs only', () => {
+  assert.equal(validateSoundCloudUrl('https://soundcloud.com/artist/track').error, undefined);
+  assert.equal(validateSoundCloudUrl('https://www.soundcloud.com/artist/track/s-abc123').error, undefined);
+  assert.ok(validateSoundCloudUrl('https://soundcloud.com/sets/my-playlist').error);
+  assert.ok(validateSoundCloudUrl('https://soundcloud.com.evil.test/artist/track').error);
+  assert.ok(validateSoundCloudUrl('https://user:pass@soundcloud.com/artist/track').error);
+  assert.ok(validateSoundCloudUrl('https://soundcloud.com:8443/artist/track').error);
+});
+
+test('recognises only SoundCloud original-download formats as downloadable', () => {
+  assert.equal(isSoundCloudOriginalDownloadAvailable({
+    formats: [{ format_id: 'download', vcodec: 'none' }]
+  }), true);
+  assert.equal(isSoundCloudOriginalDownloadAvailable({
+    formats: [{ format_id: 'http_mp3_128', vcodec: 'none' }, { format_id: 'hls_aac_160', vcodec: 'none' }]
+  }), false);
+  assert.equal(isSoundCloudOriginalDownloadAvailable({ formats: [] }), false);
+  assert.equal(isSoundCloudOriginalDownloadAvailable(null), false);
 });

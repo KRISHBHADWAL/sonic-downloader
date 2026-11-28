@@ -14,6 +14,8 @@ backend/downloads/
 *.log
 
 # local configuration and secrets
+backend/soundcloud-cookies*.txt
+*.cookies.txt
 .env
 .env.*
 !.env.example

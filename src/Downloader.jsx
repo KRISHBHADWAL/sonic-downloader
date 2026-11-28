@@ -26,6 +26,14 @@ function openDownload(downloadUrl) {
   anchor.remove();
 }
 
+function formatDuration(seconds) {
+  if (!Number.isFinite(Number(seconds)) || Number(seconds) < 0) return null;
+  const total = Math.floor(Number(seconds));
+  const minutes = Math.floor(total / 60);
+  const remainder = String(total % 60).padStart(2, '0');
+  return minutes + ':' + remainder;
+}
+
 async function readDownloadEvents(response, onProgress) {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
@@ -94,11 +102,13 @@ async function readDownloadEvents(response, onProgress) {
 }
 
 const Downloader = () => {
+  const [mode, setMode] = useState('video');
   const [url, setUrl] = useState('');
   const [resolution, setResolution] = useState('');
   const [fps, setFps] = useState('Any');
   const [formats, setFormats] = useState([]);
   const [videoTitle, setVideoTitle] = useState('');
+  const [musicInfo, setMusicInfo] = useState(null);
   const [message, setMessage] = useState('');
   const [variant, setVariant] = useState('info');
   const [loadingInfo, setLoadingInfo] = useState(false);
@@ -108,23 +118,64 @@ const Downloader = () => {
   const [showProgress, setShowProgress] = useState(false);
   const [downloadComplete, setDownloadComplete] = useState(false);
 
-  const fetchVideoInfo = async event => {
+  const resetResults = () => {
+    setFormats([]);
+    setResolution('');
+    setVideoTitle('');
+    setMusicInfo(null);
+    setMessage('');
+    setShowProgress(false);
+    setDownloadComplete(false);
+    setDownloadProgress(0);
+    setDownloadStage('');
+  };
+
+  const changeMode = nextMode => {
+    if (mode === nextMode || loadingInfo || loadingDownload) return;
+    setMode(nextMode);
+    setUrl('');
+    resetResults();
+  };
+
+  const updateUrl = value => {
+    setUrl(value);
+    resetResults();
+  };
+
+  const fetchMediaInfo = async event => {
     event.preventDefault();
     if (!url.trim()) {
       setVariant('warning');
-      setMessage('Enter a video URL first.');
+      setMessage(mode === 'music' ? 'Paste an individual SoundCloud track URL first.' : 'Enter a video URL first.');
       return;
     }
 
     setLoadingInfo(true);
     setFormats([]);
     setResolution('');
+    setMusicInfo(null);
     setDownloadProgress(0);
     setShowProgress(false);
     setDownloadComplete(false);
     setMessage('');
+
     try {
-      const response = await axios.post(API_BASE_URL + '/video-info', { url: url.trim() }, { timeout: 120000 });
+      const endpoint = mode === 'music' ? '/music-info' : '/video-info';
+      const response = await axios.post(API_BASE_URL + endpoint, { url: url.trim() }, { timeout: 120000 });
+
+      if (mode === 'music') {
+        setMusicInfo(response.data);
+        if (response.data.downloadAvailable) {
+          const extension = response.data.originalFormat && response.data.originalFormat.ext;
+          setVariant('success');
+          setMessage('Original track download is available.' + (extension ? ' Source format: ' + extension.toUpperCase() + '.' : ''));
+        } else {
+          setVariant('warning');
+          setMessage('Track found, but SoundCloud is not offering an original download for it. The uploader may have downloads disabled, or you may need to sign in.');
+        }
+        return;
+      }
+
       const nextFormats = Array.isArray(response.data.formats)
         ? response.data.formats.filter(item => Number(item.height) <= 4320)
         : [];
@@ -159,9 +210,14 @@ const Downloader = () => {
 
   const startDownload = async event => {
     event.preventDefault();
-    if (!url.trim() || !resolution) {
+    if (mode === 'video' && (!url.trim() || !resolution)) {
       setVariant('warning');
       setMessage('Fetch video information and select a resolution first.');
+      return;
+    }
+    if (mode === 'music' && (!url.trim() || !musicInfo || !musicInfo.downloadAvailable)) {
+      setVariant('warning');
+      setMessage('An original SoundCloud download must be available before you can save this track.');
       return;
     }
 
@@ -169,21 +225,22 @@ const Downloader = () => {
     setShowProgress(true);
     setDownloadComplete(false);
     setDownloadProgress(0);
-    setDownloadStage('Connecting to platform');
+    setDownloadStage(mode === 'music' ? 'Checking original download permission' : 'Connecting to platform');
     setVariant('info');
-    setMessage('Your download session is starting...');
+    setMessage(mode === 'music' ? 'Preparing the original SoundCloud file...' : 'Your download session is starting...');
+
     try {
-      const response = await fetch(API_BASE_URL + '/download', {
+      const endpoint = mode === 'music' ? '/music-download' : '/download';
+      const payload = mode === 'music'
+        ? { url: url.trim() }
+        : { url: url.trim(), resolution, fps: fps === 'Any' ? null : fps };
+      const response = await fetch(API_BASE_URL + endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream'
         },
-        body: JSON.stringify({
-          url: url.trim(),
-          resolution,
-          fps: fps === 'Any' ? null : fps
-        })
+        body: JSON.stringify(payload)
       });
 
       const result = await readDownloadEvents(response, progress => {
@@ -212,16 +269,7 @@ const Downloader = () => {
     }
   };
 
-  const updateUrl = value => {
-    setUrl(value);
-    setFormats([]);
-    setResolution('');
-    setVideoTitle('');
-    setMessage('');
-    setShowProgress(false);
-    setDownloadComplete(false);
-    setDownloadProgress(0);
-  };
+  const isMusic = mode === 'music';
 
   return (
     <div className="sonic-app">
@@ -241,41 +289,108 @@ const Downloader = () => {
 
       <main className="page-content">
         <section className="hero">
-          <div className="eyebrow"><span className="eyebrow-line" /> NEXT-GEN MEDIA TOOLKIT <span className="eyebrow-index">SYS // 001</span></div>
+          <div className="eyebrow"><span className="eyebrow-line" /> ONE TOOL. TWO MODES. <span className="eyebrow-index">SYS // 001</span></div>
           <h1>MOVE AT THE SPEED<br /><span>OF SONIC.</span></h1>
-          <p className="hero-copy">Drop a link. Pick your quality. Get your media.<br className="desktop-break" /> Fast, focused, and built for the digital night.</p>
+          <p className="hero-copy">Video when you need it. SoundCloud music when you feel it.<br className="desktop-break" /> One workspace, tuned for the digital night.</p>
         </section>
 
         <section className="download-panel" aria-label="Sonic Downloader">
           <div className="panel-header">
-            <div><span className="panel-kicker">01 / SOURCE INPUT</span><h2>Start your download</h2></div>
-            <span className="panel-chip"><span /> SECURE LOCAL SESSION</span>
+            <div><span className="panel-kicker">01 / SOURCE INPUT</span><h2>{isMusic ? 'Find your sound' : 'Start your download'}</h2></div>
+            <span className="panel-chip"><span /> {isMusic ? 'SOUNDCLOUD MODE' : 'VIDEO MODE'}</span>
           </div>
 
-          <form onSubmit={fetchVideoInfo} className="source-form">
-            <label htmlFor="video-url">VIDEO SOURCE URL</label>
+          <div className="mode-switch-wrap">
+            <div className="mode-switch" role="tablist" aria-label="Choose media mode">
+              <button
+                className={'mode-option' + (!isMusic ? ' mode-option--active mode-option--video' : '')}
+                type="button"
+                role="tab"
+                aria-selected={!isMusic}
+                onClick={() => changeMode('video')}
+                disabled={loadingInfo || loadingDownload}
+              >
+                <span className="mode-icon" aria-hidden="true">▶</span>
+                <span><strong>VIDEO</strong><small>YT · INSTA · SNAP</small></span>
+              </button>
+              <button
+                className={'mode-option' + (isMusic ? ' mode-option--active mode-option--music' : '')}
+                type="button"
+                role="tab"
+                aria-selected={isMusic}
+                onClick={() => changeMode('music')}
+                disabled={loadingInfo || loadingDownload}
+              >
+                <span className="mode-icon" aria-hidden="true">♫</span>
+                <span><strong>MUSIC</strong><small>SOUNDCLOUD</small></span>
+              </button>
+            </div>
+            <span className="mode-caption">{isMusic ? 'ORIGINAL TRACK FILES' : 'VIDEO FORMAT CONTROL'}</span>
+          </div>
+
+          <form onSubmit={fetchMediaInfo} className="source-form">
+            <label htmlFor="media-url">{isMusic ? 'SOUNDCLOUD TRACK URL' : 'VIDEO SOURCE URL'}</label>
             <div className="url-row">
               <span className="url-prefix" aria-hidden="true">↗</span>
               <input
-                id="video-url"
+                id="media-url"
                 type="url"
                 value={url}
                 onChange={event => updateUrl(event.target.value)}
-                placeholder="https://youtube.com/watch?v=..."
+                placeholder={isMusic ? 'https://soundcloud.com/artist/track' : 'https://youtube.com/watch?v=...'}
                 maxLength={2048}
                 autoComplete="url"
                 required
               />
               <button className="neon-button neon-button--primary" type="submit" disabled={loadingInfo || loadingDownload}>
-                {loadingInfo ? <><span className="button-spinner" /> ANALYSING</> : 'ANALYSE LINK ↗'}
+                {loadingInfo ? <><span className="button-spinner" /> SCANNING</> : isMusic ? 'SCAN TRACK ↗' : 'ANALYSE LINK ↗'}
               </button>
             </div>
-            <p className="field-hint">SUPPORTED SOURCES: YOUTUBE · INSTAGRAM · SNAPCHAT</p>
+            <p className="field-hint">{isMusic
+              ? 'INDIVIDUAL SOUNDCLOUD TRACKS · ORIGINAL DOWNLOADS ONLY'
+              : 'SUPPORTED SOURCES: YOUTUBE · INSTAGRAM · SNAPCHAT'}</p>
           </form>
 
           {message && <div className={'notice notice--' + variant} role="status">{message}</div>}
 
-          {formats.length > 0 && (
+          {isMusic && musicInfo && (
+            <section className="music-result" aria-label="SoundCloud track information">
+              <div className="section-divider"><span>02 / TRACK INTELLIGENCE</span><span className={musicInfo.downloadAvailable ? 'ready-indicator' : 'restricted-indicator'}>{musicInfo.downloadAvailable ? 'ORIGINAL FILE READY' : 'DOWNLOAD NOT ENABLED'}</span></div>
+              <div className="track-card">
+                {musicInfo.thumbnail
+                  ? <img className="track-artwork" src={musicInfo.thumbnail} alt="" loading="lazy" />
+                  : <div className="track-artwork track-artwork--placeholder" aria-hidden="true">♫</div>}
+                <div className="track-details">
+                  <span className="track-overline">SOUNDCLOUD / SINGLE TRACK</span>
+                  <h3>{musicInfo.title}</h3>
+                  <p>{musicInfo.artist}</p>
+                  <div className="track-meta">
+                    {formatDuration(musicInfo.duration) && <span>{formatDuration(musicInfo.duration)}</span>}
+                    {musicInfo.originalFormat && musicInfo.originalFormat.ext && <span>{musicInfo.originalFormat.ext.toUpperCase()} ORIGINAL</span>}
+                    {musicInfo.originalFormat && musicInfo.originalFormat.filesize && <span>{(musicInfo.originalFormat.filesize / (1024 * 1024)).toFixed(1)} MB</span>}
+                  </div>
+                  <a className="soundcloud-link" href={musicInfo.permalink || url} target="_blank" rel="noreferrer">OPEN ON SOUNDCLOUD ↗</a>
+                </div>
+                <div className={'track-permission' + (musicInfo.downloadAvailable ? ' track-permission--yes' : '')} aria-label={musicInfo.downloadAvailable ? 'Download permitted' : 'Download not available'}>
+                  <span>{musicInfo.downloadAvailable ? '✓' : '×'}</span>
+                  <small>{musicInfo.downloadAvailable ? 'DOWNLOAD\nAVAILABLE' : 'STREAM\nONLY'}</small>
+                </div>
+              </div>
+              <div className="music-action-row">
+                <div className="music-policy-note">Only SoundCloud's original downloadable file is offered. No stream capture or playlist ripping.</div>
+                <button
+                  className="neon-button neon-button--music"
+                  type="button"
+                  onClick={startDownload}
+                  disabled={!musicInfo.downloadAvailable || loadingDownload || loadingInfo}
+                >
+                  {loadingDownload ? <><span className="button-spinner" /> PREPARING</> : <><span aria-hidden="true">↓</span> DOWNLOAD ORIGINAL</>}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {!isMusic && formats.length > 0 && (
             <form className="quality-form" onSubmit={startDownload}>
               <div className="section-divider"><span>02 / OUTPUT CONFIGURATION</span><span className="ready-indicator">FORMATS READY</span></div>
               <div className="video-title">{videoTitle}</div>
@@ -294,7 +409,7 @@ const Downloader = () => {
                   </select>
                 </div>
                 <button className="neon-button neon-button--download" type="submit" disabled={loadingDownload || loadingInfo || !resolution}>
-                  {loadingDownload ? <><span className="button-spinner" /> PREPARING</> : <><span aria-hidden="true">↓</span> DOWNLOAD NOW</>}
+                  {loadingDownload ? <><span className="button-spinner" /> PREPARING</> : <><span aria-hidden="true">↓</span> DOWNLOAD VIDEO</>}
                 </button>
               </div>
             </form>
@@ -303,7 +418,7 @@ const Downloader = () => {
           {showProgress && (
             <section className={'progress-panel' + (downloadComplete ? ' progress-panel--complete' : '')} aria-label="Download progress">
               <div className="progress-topline">
-                <div><span className="panel-kicker">03 / DOWNLOAD PIPELINE</span><h3>{loadingDownload ? 'Preparing your media' : downloadComplete ? 'Ready to roll' : 'Download status'}</h3></div>
+                <div><span className="panel-kicker">03 / DOWNLOAD PIPELINE</span><h3>{loadingDownload ? (isMusic ? 'Preparing your track' : 'Preparing your media') : downloadComplete ? 'Ready to roll' : 'Download status'}</h3></div>
                 <strong className="progress-value">{downloadProgress}<span>%</span></strong>
               </div>
               <div
@@ -328,9 +443,9 @@ const Downloader = () => {
         </section>
 
         <div className="trust-row">
-          <span><i>✦</i> QUALITY CONTROL</span>
-          <span><i>◈</i> NATIVE BROWSER DOWNLOADS</span>
-          <span><i>⌁</i> NO ACCOUNT REQUIRED</span>
+          <span><i>✦</i> FORMAT CONTROL</span>
+          <span><i>◈</i> ORIGINAL DOWNLOADS</span>
+          <span><i>⌁</i> LOCAL FILE DELIVERY</span>
         </div>
       </main>
 
