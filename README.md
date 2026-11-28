@@ -48,7 +48,7 @@ Backend (second terminal):
     cp .env.example .env
     npm start
 
-The API binds to 127.0.0.1:4000 by default and allows the Vite origin http://localhost:5173. Configure CORS_ORIGIN if your frontend uses another origin. Set VITE_API_BASE_URL if your backend is not at http://127.0.0.1:4000.
+The API binds to 127.0.0.1:4000 by default and allows the Vite origin http://127.0.0.1:5173. Configure CORS_ORIGIN if your frontend uses another origin. Set VITE_API_BASE_URL if your backend is not at http://127.0.0.1:4000.
 
 ## Commands
 
