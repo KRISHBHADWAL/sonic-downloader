@@ -2,45 +2,27 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Container, Form, Button, Alert, Spinner } from 'react-bootstrap';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:4000';
-
-function filenameFromDisposition(disposition) {
-  if (!disposition) return 'sonic-download';
-  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-  const plain = disposition.match(/filename="?([^";]+)"?/i);
-  const raw = encoded ? encoded[1] : (plain ? plain[1] : 'sonic-download');
-  try {
-    return decodeURIComponent(raw).replace(/[\\/\r\n]/g, '_');
-  } catch {
-    return raw.replace(/[\\/\r\n]/g, '_');
-  }
-}
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:4000';
 
 async function errorMessage(error) {
   const payload = error.response && error.response.data;
-  if (payload instanceof Blob) {
-    try {
-      const parsed = JSON.parse(await payload.text());
-      if (parsed && parsed.error) return parsed.error;
-    } catch {
-      // Fall through to the generic message when the response is not JSON.
-    }
-  } else if (payload && typeof payload === 'object' && payload.error) {
-    return payload.error;
-  }
+  if (payload && typeof payload === 'object' && payload.error) return payload.error;
   return 'The request failed. Check the URL and backend service.';
 }
 
-function saveBlob(blob, filename) {
-  const objectUrl = window.URL.createObjectURL(blob);
+function openDownload(downloadUrl) {
+  const target = new URL(downloadUrl, API_BASE_URL);
+  if (target.origin !== new URL(API_BASE_URL).origin) {
+    throw new Error('The API returned an invalid download location.');
+  }
+
   const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = filename;
+  anchor.href = target.toString();
+  anchor.rel = 'noopener';
   anchor.style.display = 'none';
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
 }
 
 const Downloader = () => {
@@ -113,15 +95,14 @@ const Downloader = () => {
         url: url.trim(),
         resolution,
         fps: fps === 'Any' ? null : fps
-      }, {
-        timeout: 10 * 60 * 1000,
-        responseType: 'blob'
-      });
+      }, { timeout: 10 * 60 * 1000 });
 
-      const filename = filenameFromDisposition(response.headers['content-disposition']);
-      saveBlob(response.data, filename);
+      if (!response.data || typeof response.data.downloadUrl !== 'string') {
+        throw new Error('The backend did not return a download link.');
+      }
+      openDownload(response.data.downloadUrl);
       setVariant('success');
-      setMessage('Your download has been delivered to this browser.');
+      setMessage('Your file is ready. Your browser is downloading it now.');
     } catch (error) {
       setVariant('danger');
       setMessage(await errorMessage(error));
@@ -175,7 +156,7 @@ const Downloader = () => {
             {loadingDownload ? <><Spinner as="span" size="sm" animation="border" className="me-2" />Downloading and preparing file...</> : 'Download'}
           </Button>
           <p className="small text-muted mt-2 mb-0">
-            The completed media file will be sent directly to your browser.
+            Once ready, your browser receives the file directly using its native download handling.
           </p>
         </Form>
       )}
