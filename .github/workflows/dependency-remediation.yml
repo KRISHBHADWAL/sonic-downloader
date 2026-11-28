@@ -1,0 +1,65 @@
+name: Non-breaking dependency remediation
+
+on:
+  push:
+    branches: [maintenance/secure-downloads-dependency-cleanup]
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Apply compatible frontend security updates
+        run: |
+          npm ci
+          npm audit fix --no-fund || true
+          CI=true npm test -- --watchAll=false
+          npm run build
+
+      - name: Apply compatible backend security updates
+        working-directory: backend
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci
+          npm audit fix --no-fund || true
+          npm test
+
+      - name: Produce audit reports
+        run: |
+          npm audit --json > frontend-audit.json || true
+          (cd backend && npm audit --json > ../backend-audit.json) || true
+          node -e "for (const f of ['frontend-audit.json','backend-audit.json']) { const r=require('./'+f); const v=r.metadata?.vulnerabilities || {}; console.log(f, JSON.stringify(v)); }"
+
+      - name: Upload npm audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-reports
+          path: |
+            frontend-audit.json
+            backend-audit.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit updated lockfiles
+        run: |
+          if ! git diff --quiet -- package-lock.json backend/package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json backend/package-lock.json
+            git commit -m "fix: apply non-breaking npm security updates"
+            git push origin HEAD
+          else
+            echo "No compatible lockfile updates were available."
+          fi
