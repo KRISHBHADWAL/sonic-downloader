@@ -1,6 +1,6 @@
 // src/App.js
 import React from 'react';
-import Downloader from './Downloader';
+import Downloader from './Downloader.jsx';
 
 function App() {
   return (
