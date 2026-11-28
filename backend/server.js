@@ -46,7 +46,7 @@ function validateSoundCloudUrl(value) {
   if (!['http:', 'https:'].includes(parsed.protocol)) return { error: 'Only HTTP and HTTPS URLs are supported.' };
   if (parsed.username || parsed.password || parsed.port) return { error: 'URL credentials and custom ports are not allowed.' };
 
-  const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, '');
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
   const segments = parsed.pathname.split('/').filter(Boolean);
   const reserved = new Set(['sets', 'albums', 'likes', 'reposts', 'tracks', 'stations', 'search', 'discover']);
   if (!SOUNDCLOUD_HOSTS.has(hostname) || segments.length < 2 || segments.length > 3 || reserved.has(segments[0].toLowerCase())) {
@@ -57,7 +57,7 @@ function validateSoundCloudUrl(value) {
 
 function isSoundCloudOriginalDownloadAvailable(info) {
   return Boolean(info && Array.isArray(info.formats) && info.formats.some(format =>
-    format && format.format_id === 'download' && format.acodec && format.acodec !== 'none'
+    format && format.format_id === 'download'
   ));
 }
 
@@ -337,7 +337,7 @@ app.post('/music-download', (req, res) => {
     '--print', 'after_move:filepath',
     checked.url
   ], res, stdout => {
-    const reportedPath = stdout.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean).pop();
+    const reportedPath = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean).pop();
     return { downloadPath: reportedPath };
   }, {
     streamEvents: true,
