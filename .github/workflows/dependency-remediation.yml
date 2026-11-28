@@ -26,7 +26,7 @@ jobs:
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           npm ci
           npm audit fix --no-fund || true
-          CI=true npm test -- --watchAll=false
+          CI=true npm test
           npm run build
 
       - name: Apply compatible backend security updates
