@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 20.6 or newer
 - Python 3.9 or newer
 - yt-dlp installed in the same Python environment selected by PYTHON_COMMAND
 
@@ -11,7 +11,7 @@ Install the backend dependencies and yt-dlp:
     cd backend
     npm ci
     python3 -m pip install --upgrade yt-dlp
-    cp .env.example .env
+    cp .env.example .env  # Windows PowerShell: Copy-Item .env.example .env
     npm start
 
 On Windows, set PYTHON_COMMAND=py (or the full path to Python). The API binds to 127.0.0.1 by default; set HOST=0.0.0.0 only when deliberately exposing it on a trusted network. Set CORS_ORIGIN to the exact frontend origin.

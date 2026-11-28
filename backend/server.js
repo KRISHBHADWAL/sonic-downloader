@@ -27,7 +27,7 @@ function validateVideoUrl(value) {
   if (!['http:', 'https:'].includes(parsed.protocol)) return { error: 'Only HTTP and HTTPS URLs are supported.' };
   if (parsed.username || parsed.password || parsed.port) return { error: 'URL credentials and custom ports are not allowed.' };
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  if (!ALLOWED_HOSTS.some(host => hostname === host || hostname.endsWith('.' + host))) {
+  if (!ALLOWED_HOSTS.includes(hostname)) {
     return { error: 'Unsupported platform URL. Use YouTube, Instagram, or Snapchat.' };
   }
   return { url: parsed.toString() };
