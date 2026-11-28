@@ -22,6 +22,7 @@ jobs:
 
       - name: Apply compatible frontend security updates
         run: |
+          rm -f package-lock.json
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           npm ci
           npm audit fix --no-fund || true
