@@ -130,7 +130,7 @@ npm start
 
 The API starts at **http://127.0.0.1:4000**.
 
-Open the frontend, paste a supported URL, select **Analyse link**, choose a quality, and start the download.
+Open the frontend, choose **VIDEO** or **MUSIC**, paste a supported URL, and follow the matching analysis and download controls.
 
 <details>
 <summary><strong>Windows PowerShell setup</strong></summary>
@@ -254,7 +254,7 @@ Useful frontend commands:
 - Downloaded files remain on the backend after delivery. Configure retention cleanup for long-running installations.
 
 > [!WARNING]
- > This project is intended for local use. A hostname allowlist alone is not a complete SSRF defence. Before exposing the API publicly, add authentication, rate limiting, per-user quotas, DNS/IP and redirect validation, network-level egress restrictions, persistent ticket handling, and download cleanup. Review platform terms and only save media you are authorised to download.
+> This project is intended for local use. A hostname allowlist alone is not a complete SSRF defence. Before exposing the API publicly, add authentication, rate limiting, per-user quotas, DNS/IP and redirect validation, network-level egress restrictions, persistent ticket handling, and download cleanup. Review platform terms and only save media you are authorised to download.
 
 ## 📁 Project layout
 
