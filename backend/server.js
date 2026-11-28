@@ -292,6 +292,7 @@ app.post('/music-info', (req, res) => {
       if (info._type === 'playlist' || Array.isArray(info.entries)) {
         throw new Error('SoundCloud playlists are not supported. Paste an individual track URL.');
       }
+      const originalFormat = (info.formats || []).find(format => format && format.format_id === 'download');
       return {
         title: info.title || 'Untitled track',
         artist: info.artist || info.uploader || 'Unknown artist',
@@ -299,11 +300,8 @@ app.post('/music-info', (req, res) => {
         thumbnail: info.thumbnail || null,
         permalink: info.webpage_url || checked.url,
         downloadAvailable: isSoundCloudOriginalDownloadAvailable(info),
-        originalFormat: (info.formats || []).find(format => format && format.format_id === 'download')
-          ? {
-              ext: (info.formats || []).find(format => format && format.format_id === 'download').ext || null,
-              filesize: (info.formats || []).find(format => format && format.format_id === 'download').filesize || null
-            }
+        originalFormat: originalFormat
+          ? { ext: originalFormat.ext || null, filesize: originalFormat.filesize || null }
           : null
       };
     }
