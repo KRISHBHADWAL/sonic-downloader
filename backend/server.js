@@ -22,7 +22,7 @@ const ALLOWED_HOSTS = (process.env.ALLOWED_VIDEO_HOSTS ||
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: false, limit: '16kb' }));
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://127.0.0.1:5173' }));
 
 function validateVideoUrl(value) {
   if (typeof value !== 'string' || value.length > MAX_URL_LENGTH) return { error: 'Enter a valid video URL.' };
