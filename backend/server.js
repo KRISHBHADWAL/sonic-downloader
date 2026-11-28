@@ -44,6 +44,19 @@ function buildFormat(resolution, fpsInput) {
   return 'bestvideo' + height + fps + '+bestaudio/best' + height + fps;
 }
 
+function parseYtDlpProgress(line) {
+  const match = String(line).match(/\[download\]\s+(\d{1,3}(?:\.\d+)?)%/i);
+  if (!match) return null;
+  const percent = Number(match[1]);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+  return percent;
+}
+
+function sendSseEvent(res, eventName, payload) {
+  if (res.destroyed || res.writableEnded) return;
+  res.write('event: ' + eventName + '\ndata: ' + JSON.stringify(payload) + '\n\n');
+}
+
 /**
  * Resolve yt-dlp's reported output path and reject anything outside the
  * configured download directory, including symlinks that escape that directory.
@@ -86,7 +99,7 @@ function createDownloadTicket(filePath) {
   return ticket;
 }
 
-function runYtDlp(args, res, onSuccess) {
+function runYtDlp(args, res, onSuccess, options = {}) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
   const child = spawn(PYTHON, ['-m', 'yt_dlp', ...args], {
     cwd: DOWNLOAD_DIR,
@@ -98,6 +111,8 @@ function runYtDlp(args, res, onSuccess) {
   let stdout = '';
   let stderr = '';
   let settled = false;
+  const progressBuffers = { stdout: '', stderr: '' };
+  const streamEvents = options.streamEvents === true;
   const timeout = setTimeout(() => {
     child.kill('SIGKILL');
     finish(504, { error: 'The media operation timed out.' });
@@ -107,7 +122,31 @@ function runYtDlp(args, res, onSuccess) {
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
+
+    if (streamEvents) {
+      if (status >= 400) {
+        sendSseEvent(res, 'failure', body);
+      } else {
+        sendSseEvent(res, 'complete', body);
+      }
+      if (!res.destroyed && !res.writableEnded) res.end();
+      return;
+    }
+
     if (!res.headersSent && !res.destroyed) res.status(status).json(body);
+  }
+
+  function inspectProgress(streamName, chunk) {
+    progressBuffers[streamName] += chunk.toString();
+    const lines = progressBuffers[streamName].split(/\r\n|\n|\r/);
+    progressBuffers[streamName] = lines.pop() || '';
+
+    for (const line of lines) {
+      const percent = parseYtDlpProgress(line);
+      if (percent !== null && typeof options.onProgress === 'function') {
+        options.onProgress({ percent, stage: 'Downloading media' });
+      }
+    }
   }
 
   child.stdout.on('data', chunk => {
@@ -115,18 +154,35 @@ function runYtDlp(args, res, onSuccess) {
     if (stdout.length > MAX_OUTPUT) {
       child.kill('SIGKILL');
       finish(502, { error: 'The media tool returned too much output.' });
+      return;
     }
+    inspectProgress('stdout', chunk);
   });
+
   child.stderr.on('data', chunk => {
     stderr += chunk.toString();
     if (stderr.length > MAX_OUTPUT) stderr = stderr.slice(-MAX_OUTPUT);
+    inspectProgress('stderr', chunk);
   });
+
   child.on('error', error => {
     console.error('Could not start yt-dlp:', error.code || 'spawn error');
     finish(500, { error: 'Unable to start yt-dlp. Check the Python and yt-dlp installation.' });
   });
+
   child.on('close', code => {
     if (settled) return;
+
+    for (const streamName of ['stdout', 'stderr']) {
+      const pendingLine = progressBuffers[streamName];
+      if (pendingLine) {
+        const percent = parseYtDlpProgress(pendingLine);
+        if (percent !== null && typeof options.onProgress === 'function') {
+          options.onProgress({ percent, stage: 'Downloading media' });
+        }
+      }
+    }
+
     if (code !== 0) {
       console.error('yt-dlp exited with code:', code);
       finish(502, { error: 'The media service could not process this URL. Check that it is public and supported.' });
@@ -155,7 +211,6 @@ function runYtDlp(args, res, onSuccess) {
     if (!res.writableEnded && !settled) child.kill();
   });
 }
-
 app.post('/video-info', (req, res) => {
   const checked = validateVideoUrl(req.body && req.body.url);
   if (checked.error) return res.status(400).json({ error: checked.error });
@@ -203,6 +258,15 @@ app.post('/download', (req, res) => {
     return res.status(400).json({ error: 'Choose a valid frame rate.' });
   }
 
+  res.status(200).set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+  sendSseEvent(res, 'progress', { percent: 0, stage: 'Connecting to platform' });
+
   runYtDlp([
     '--no-playlist',
     '--no-warnings',
@@ -214,9 +278,16 @@ app.post('/download', (req, res) => {
   ], res, stdout => {
     const reportedPath = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean).pop();
     return { downloadPath: reportedPath };
+  }, {
+    streamEvents: true,
+    onProgress: progress => {
+      sendSseEvent(res, 'progress', {
+        percent: progress.percent,
+        stage: progress.stage
+      });
+    }
   });
 });
-
 // Short-lived, single-use capability URL. It does not expose a filesystem path.
 app.get('/download/:ticket', (req, res) => {
   pruneDownloadTickets();
@@ -259,4 +330,4 @@ if (require.main === module) {
   app.listen(PORT, HOST, () => console.log('Sonic Downloader API listening on http://' + HOST + ':' + PORT));
 }
 
-module.exports = { app, validateVideoUrl, buildFormat, resolveDownloadFile, createDownloadTicket };
+module.exports = { app, validateVideoUrl, buildFormat, parseYtDlpProgress, resolveDownloadFile, createDownloadTicket };
