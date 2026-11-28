@@ -18,6 +18,7 @@ const downloadTickets = new Map();
 const ALLOWED_HOSTS = (process.env.ALLOWED_VIDEO_HOSTS ||
   'youtube.com,www.youtube.com,youtu.be,m.youtube.com,music.youtube.com,instagram.com,www.instagram.com,m.instagram.com,snapchat.com,www.snapchat.com,story.snapchat.com')
   .split(',').map(host => host.trim().toLowerCase()).filter(Boolean);
+const SOUNDCLOUD_HOSTS = new Set(['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com']);
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
@@ -36,6 +37,41 @@ function validateVideoUrl(value) {
     return { error: 'Unsupported platform URL. Use YouTube, Instagram, or Snapchat.' };
   }
   return { url: parsed.toString() };
+}
+
+function validateSoundCloudUrl(value) {
+  if (typeof value !== 'string' || value.length > MAX_URL_LENGTH) return { error: 'Enter a valid SoundCloud track URL.' };
+  let parsed;
+  try { parsed = new URL(value); } catch { return { error: 'Enter a valid SoundCloud track URL.' }; }
+  if (!['http:', 'https:'].includes(parsed.protocol)) return { error: 'Only HTTP and HTTPS URLs are supported.' };
+  if (parsed.username || parsed.password || parsed.port) return { error: 'URL credentials and custom ports are not allowed.' };
+
+  const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, '');
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  const reserved = new Set(['sets', 'albums', 'likes', 'reposts', 'tracks', 'stations', 'search', 'discover']);
+  if (!SOUNDCLOUD_HOSTS.has(hostname) || segments.length < 2 || segments.length > 3 || reserved.has(segments[0].toLowerCase())) {
+    return { error: 'Use an individual SoundCloud track URL. Playlists and profile pages are not supported.' };
+  }
+  return { url: parsed.toString() };
+}
+
+function isSoundCloudOriginalDownloadAvailable(info) {
+  return Boolean(info && Array.isArray(info.formats) && info.formats.some(format =>
+    format && format.format_id === 'download' && format.acodec && format.acodec !== 'none'
+  ));
+}
+
+function getSoundCloudCookieArgs() {
+  const configuredPath = process.env.SOUNDCLOUD_COOKIES_FILE;
+  if (!configuredPath || !configuredPath.trim()) return [];
+  let cookiePath;
+  try {
+    cookiePath = fs.realpathSync(path.resolve(__dirname, configuredPath));
+    if (!fs.statSync(cookiePath).isFile()) throw new Error('not a file');
+  } catch {
+    throw new Error('The configured SoundCloud cookie file is unavailable. Check SOUNDCLOUD_COOKIES_FILE.');
+  }
+  return ['--cookies', cookiePath];
 }
 
 function buildFormat(resolution, fpsInput) {
@@ -144,7 +180,7 @@ function runYtDlp(args, res, onSuccess, options = {}) {
     for (const line of lines) {
       const percent = parseYtDlpProgress(line);
       if (percent !== null && typeof options.onProgress === 'function') {
-        options.onProgress({ percent, stage: 'Downloading media' });
+        options.onProgress({ percent, stage: options.progressStage || 'Downloading media' });
       }
     }
   }
@@ -178,14 +214,14 @@ function runYtDlp(args, res, onSuccess, options = {}) {
       if (pendingLine) {
         const percent = parseYtDlpProgress(pendingLine);
         if (percent !== null && typeof options.onProgress === 'function') {
-          options.onProgress({ percent, stage: 'Downloading media' });
+          options.onProgress({ percent, stage: options.progressStage || 'Downloading media' });
         }
       }
     }
 
     if (code !== 0) {
       console.error('yt-dlp exited with code:', code);
-      finish(502, { error: 'The media service could not process this URL. Check that it is public and supported.' });
+      finish(502, { error: options.failureMessage || 'The media service could not process this URL. Check that it is public and supported.' });
       return;
     }
 
@@ -238,6 +274,79 @@ app.post('/video-info', (req, res) => {
       };
     }
   );
+});
+
+app.post('/music-info', (req, res) => {
+  const checked = validateSoundCloudUrl(req.body && req.body.url);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+
+  let cookieArgs;
+  try { cookieArgs = getSoundCloudCookieArgs(); }
+  catch (error) { return res.status(500).json({ error: error.message }); }
+
+  runYtDlp(
+    [...cookieArgs, '--dump-single-json', '--skip-download', '--no-warnings', '--no-playlist', checked.url],
+    res,
+    stdout => {
+      const info = JSON.parse(stdout);
+      if (info._type === 'playlist' || Array.isArray(info.entries)) {
+        throw new Error('SoundCloud playlists are not supported. Paste an individual track URL.');
+      }
+      return {
+        title: info.title || 'Untitled track',
+        artist: info.artist || info.uploader || 'Unknown artist',
+        duration: info.duration || null,
+        thumbnail: info.thumbnail || null,
+        permalink: info.webpage_url || checked.url,
+        downloadAvailable: isSoundCloudOriginalDownloadAvailable(info),
+        originalFormat: (info.formats || []).find(format => format && format.format_id === 'download')
+          ? {
+              ext: (info.formats || []).find(format => format && format.format_id === 'download').ext || null,
+              filesize: (info.formats || []).find(format => format && format.format_id === 'download').filesize || null
+            }
+          : null
+      };
+    }
+  );
+});
+
+app.post('/music-download', (req, res) => {
+  const checked = validateSoundCloudUrl(req.body && req.body.url);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+
+  let cookieArgs;
+  try { cookieArgs = getSoundCloudCookieArgs(); }
+  catch (error) { return res.status(500).json({ error: error.message }); }
+
+  res.status(200).set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+  sendSseEvent(res, 'progress', { percent: 0, stage: 'Checking SoundCloud download permission' });
+
+  runYtDlp([
+    ...cookieArgs,
+    '--no-playlist',
+    '--no-warnings',
+    '--newline',
+    '--format', 'download',
+    '--output', '%(title).150B [%(id)s].%(ext)s',
+    '--print', 'after_move:filepath',
+    checked.url
+  ], res, stdout => {
+    const reportedPath = stdout.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean).pop();
+    return { downloadPath: reportedPath };
+  }, {
+    streamEvents: true,
+    progressStage: 'Downloading original audio',
+    failureMessage: 'SoundCloud did not provide an original downloadable file for this track. The uploader must enable downloads, and you may need to configure your own signed-in SoundCloud session.',
+    onProgress: progress => {
+      sendSseEvent(res, 'progress', { percent: progress.percent, stage: progress.stage });
+    }
+  });
 });
 
 app.post('/download', (req, res) => {
@@ -330,4 +439,4 @@ if (require.main === module) {
   app.listen(PORT, HOST, () => console.log('Sonic Downloader API listening on http://' + HOST + ':' + PORT));
 }
 
-module.exports = { app, validateVideoUrl, buildFormat, parseYtDlpProgress, resolveDownloadFile, createDownloadTicket };
+module.exports = { app, validateVideoUrl, validateSoundCloudUrl, isSoundCloudOriginalDownloadAvailable, buildFormat, parseYtDlpProgress, resolveDownloadFile, createDownloadTicket };
