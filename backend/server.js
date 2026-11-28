@@ -1,5 +1,6 @@
 const express = require('express');
 const { spawn } = require('child_process');
+const { randomUUID } = require('crypto');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
@@ -12,16 +13,16 @@ const DOWNLOAD_DIR = path.resolve(process.env.DOWNLOAD_DIR || path.join(__dirnam
 const MAX_URL_LENGTH = 2048;
 const MAX_OUTPUT = 2 * 1024 * 1024;
 const TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS) || 600000;
+const DOWNLOAD_TICKET_TTL_MS = 10 * 60 * 1000;
+const downloadTickets = new Map();
 const ALLOWED_HOSTS = (process.env.ALLOWED_VIDEO_HOSTS ||
   'youtube.com,www.youtube.com,youtu.be,m.youtube.com,music.youtube.com,instagram.com,www.instagram.com,m.instagram.com,snapchat.com,www.snapchat.com,story.snapchat.com')
   .split(',').map(host => host.trim().toLowerCase()).filter(Boolean);
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  exposedHeaders: ['Content-Disposition']
-}));
+app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
 
 function validateVideoUrl(value) {
   if (typeof value !== 'string' || value.length > MAX_URL_LENGTH) return { error: 'Enter a valid video URL.' };
@@ -45,7 +46,7 @@ function buildFormat(resolution, fpsInput) {
 
 /**
  * Resolve yt-dlp's reported output path and reject anything outside the
- * configured download directory, including symlinks escaping that directory.
+ * configured download directory, including symlinks that escape that directory.
  */
 function resolveDownloadFile(baseDir, reportedPath) {
   if (typeof reportedPath !== 'string' || !reportedPath.trim()) {
@@ -64,6 +65,25 @@ function resolveDownloadFile(baseDir, reportedPath) {
     throw new Error('The reported output path is not a regular file.');
   }
   return realCandidate;
+}
+
+function pruneDownloadTickets() {
+  const now = Date.now();
+  for (const [ticket, item] of downloadTickets.entries()) {
+    if (item.expiresAt <= now) downloadTickets.delete(ticket);
+  }
+}
+
+function createDownloadTicket(filePath) {
+  pruneDownloadTickets();
+  const ticket = randomUUID();
+  const downloadName = path.basename(filePath);
+  downloadTickets.set(ticket, {
+    filePath,
+    downloadName,
+    expiresAt: Date.now() + DOWNLOAD_TICKET_TTL_MS
+  });
+  return ticket;
 }
 
 function runYtDlp(args, res, onSuccess) {
@@ -115,31 +135,24 @@ function runYtDlp(args, res, onSuccess) {
 
     try {
       const result = onSuccess ? onSuccess(stdout, stderr) : { message: 'Operation completed successfully.' };
-      if (result && result.filePath) {
-        settled = true;
-        clearTimeout(timeout);
-        res.set('Cache-Control', 'no-store');
-        res.download(result.filePath, result.downloadName, error => {
-          if (!error) return;
-          console.error('Unable to deliver completed download:', error.code || 'stream error');
-          if (!res.headersSent && !res.destroyed) {
-            res.status(500).json({ error: 'The download completed but could not be delivered to the browser.' });
-          } else if (!res.destroyed) {
-            res.destroy(error);
-          }
+      if (result && result.downloadPath) {
+        const filePath = resolveDownloadFile(DOWNLOAD_DIR, result.downloadPath);
+        const ticket = createDownloadTicket(filePath);
+        finish(200, {
+          downloadUrl: '/download/' + ticket,
+          filename: path.basename(filePath),
+          expiresInSeconds: Math.floor(DOWNLOAD_TICKET_TTL_MS / 1000)
         });
-        return;
+      } else {
+        finish(200, result);
       }
-      finish(200, result);
     } catch {
       finish(502, { error: 'Could not process the output returned by yt-dlp.' });
     }
   });
 
   res.on('close', () => {
-    if (!res.writableEnded && !settled) {
-      child.kill();
-    }
+    if (!res.writableEnded && !settled) child.kill();
   });
 }
 
@@ -200,8 +213,35 @@ app.post('/download', (req, res) => {
     checked.url
   ], res, stdout => {
     const reportedPath = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean).pop();
-    const filePath = resolveDownloadFile(DOWNLOAD_DIR, reportedPath);
-    return { filePath, downloadName: path.basename(filePath) };
+    return { downloadPath: reportedPath };
+  });
+});
+
+// Short-lived, single-use capability URL. It does not expose a filesystem path.
+app.get('/download/:ticket', (req, res) => {
+  pruneDownloadTickets();
+  const ticket = downloadTickets.get(req.params.ticket);
+  if (!ticket) return res.status(404).json({ error: 'This download link is invalid or has expired.' });
+
+  // Consume the ticket before opening the file so it cannot be reused concurrently.
+  downloadTickets.delete(req.params.ticket);
+
+  let filePath;
+  try {
+    filePath = resolveDownloadFile(DOWNLOAD_DIR, ticket.filePath);
+  } catch {
+    return res.status(404).json({ error: 'The downloaded file is no longer available.' });
+  }
+
+  res.set('Cache-Control', 'no-store, private');
+  res.download(filePath, ticket.downloadName, error => {
+    if (!error) return;
+    console.error('Unable to deliver completed download:', error.code || 'stream error');
+    if (!res.headersSent && !res.destroyed) {
+      res.status(500).json({ error: 'The download could not be delivered to the browser.' });
+    } else if (!res.destroyed) {
+      res.destroy(error);
+    }
   });
 });
 
@@ -219,4 +259,4 @@ if (require.main === module) {
   app.listen(PORT, HOST, () => console.log('Sonic Downloader API listening on http://' + HOST + ':' + PORT));
 }
 
-module.exports = { app, validateVideoUrl, buildFormat, resolveDownloadFile };
+module.exports = { app, validateVideoUrl, buildFormat, resolveDownloadFile, createDownloadTicket };
